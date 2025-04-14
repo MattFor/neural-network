@@ -10,7 +10,5 @@ add_executable(NeuralNetwork main.cpp
         include/Layer.h
         src/NeuralNetwork.cpp
         include/NeuralNetwork.h
-        transformations/zoo.cpp
-        transformations/transformations.h
         src/utilities.cpp
         include/Utilities.h)

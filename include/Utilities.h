@@ -1,3 +1,7 @@
+//
+// Created by MattFor on 12.04.2025.
+//
+
 // Utilities.h
 // Helper functions for data handling, timing, and network evaluation.
 // Created by MattFor on 13/04/2025. (Date corrected)
@@ -9,26 +13,30 @@
 #include <string>
 #include <chrono>
 #include <random>
+#include <cstdio>      // Required for std::printf, std::fflush
 #include <fstream>
 #include <sstream>
+#include <utility>     // Required for std::forward
 #include <iostream>
-#include <iomanip>  // Required for std::setw, std::left, std::fixed, std::setprecision
-#include <stdexcept> // Required for std::runtime_error, std::invalid_argument
-#include <limits>   // Required for std::numeric_limits
-#include <type_traits> // Required for std::is_void_v
-#include <utility>    // Required for std::forward
-#include <algorithm>  // Required for std::max_element, std::find, std::min
-#include <iterator>   // Required for std::distance
-#include <cmath>      // Required for std::abs in evaluate_network
-#include <cstdio>     // Required for std::printf, std::fflush
 #include <functional>
+#include <type_traits> // Required for std::is_void_v
+
+// Represents a pair of input vectors and corresponding target vectors.
+// Format: { vector_of_input_samples, vector_of_target_samples }
+using DataPair = std::pair<std::vector<std::vector<double>>, std::vector<std::vector<double>>>;
+
+// Represents the result of splitting data into training and testing sets.
+// Format: { training_DataPair, testing_DataPair }
+// which expands to: { {train_inputs, train_targets}, {test_inputs, test_targets} }
+using SplitDataResult = std::pair<DataPair, DataPair>;
+
+// We want to store the function related to the data file.
+using DataProcessingFunc = std::function<DataPair()>;
 
 // Forward declare NeuralNetwork to avoid including its full header here if possible
 // (Though it might be needed for evaluate_network parameter type)
 // #include "NeuralNetwork.h" // Include necessary headers if forward declaration isn't enough
 class NeuralNetwork; // Forward declaration
-
-void load_zoo_data(const std::string& filename, std::vector<std::vector<double>>& inputs, std::vector<std::vector<double>>& targets, std::size_t& num_attributes, std::size_t& num_targets);
 
 // --- Function Declarations ---
 
@@ -102,6 +110,70 @@ void evaluate_network(
     const std::vector<std::vector<double>>& targets
 );
 
+/**
+ * @brief Splits input and target datasets into training and testing subsets.
+ *
+ * Takes complete datasets of input features and corresponding target outputs,
+ * shuffles them optionally, and then divides them into two distinct sets
+ * (training and testing) based on the specified ratio.
+ *
+ * @param all_inputs A constant reference to the vector containing all input samples.
+ * Each inner vector represents a single input sample's features.
+ * @param all_targets A constant reference to the vector containing all target samples.
+ * Each inner vector represents a single target sample's outputs.
+ * Must have the same number of samples as all_inputs.
+ * @param train_ratio The desired proportion of the dataset to allocate to the
+ * training set. Must be a value strictly between 0.0 and 1.0
+ * (e.g., 0.8 means 80% for training, 20% for testing).
+ * @param shuffle Optional boolean flag (defaults to true). If true, the dataset
+ * indices are randomly shuffled before splitting, ensuring that
+ * training and testing sets are randomized samples. If false,
+ * the split occurs sequentially (first N samples for training).
+ *
+ * @return A SplitDataResult object (std::pair<DataPair, DataPair>).
+ * The first element of the pair is the training set (itself a DataPair
+ * containing training inputs and training targets).
+ * The second element of the pair is the testing set (a DataPair
+ * containing testing inputs and testing targets).
+ * Example: return_value.first.first contains training inputs.
+ * return_value.second.second contains testing targets.
+ *
+ * @throws std::invalid_argument if:
+ * - all_inputs and all_targets have different sizes.
+ * - all_inputs (and therefore all_targets) is empty.
+ * - train_ratio is not strictly between 0.0 and 1.0.
+ */
+SplitDataResult split_data(
+    const std::vector<std::vector<double>>& all_inputs,
+    const std::vector<std::vector<double>>& all_targets,
+    double                                  train_ratio,
+    bool                                    shuffle = true
+);
+
+/**
+ * @brief Displays a specified number of sample data points (input/target pairs).
+ *
+ * Prints the first 'count' samples from the provided input and target datasets
+ * to the standard output stream in a formatted way. Handles cases where the dataset
+ * is smaller than 'count', or if the data is empty or mismatched. Useful for
+ * debugging or inspecting generated/loaded data.
+ *
+ * @param title A descriptive title to print before the sample data block.
+ * @param inputs A constant reference to the vector containing all input samples.
+ * Each inner vector represents a single sample's features.
+ * @param targets A constant reference to the vector containing all target samples.
+ * Each inner vector represents a single sample's outputs. Must correspond
+ * 1:1 with the samples in 'inputs'.
+ * @param count The maximum number of samples to display. If the dataset contains
+ * fewer samples than 'count', all available samples will be displayed.
+ * If count is 0, nothing is displayed.
+ */
+void display_sample_data(
+    const std::string&                      title,
+    const std::vector<std::vector<double>>& inputs,
+    const std::vector<std::vector<double>>& targets,
+    std::size_t                             count
+);
 
 // --- Template Implementations (must be in header) ---
 
@@ -119,23 +191,22 @@ T get_input(const std::string& prompt, T default_value)
 
     std::istringstream stream(input_line);
     T                  value;
+
     // Check if extraction is successful and if the entire stream was consumed (optional, for stricter input)
     if (stream >> value && stream.eof())
     {
         return value;
     }
-    else
-    {
-        std::cout << "Invalid input. Using default value." << std::endl;
-        return default_value;
-    }
+
+    std::cout << "Invalid input. Using default value." << '\n';
+    return default_value;
 }
 
 
 template <typename Func, typename... Args>
 auto execute_timed(const std::string& startText, const std::string& endText, Func&& func, Args&&... args)
 {
-    std::cout << startText << std::endl; // Use endl to flush buffer
+    std::cout << startText << '\n';
     const auto start_time = std::chrono::high_resolution_clock::now();
 
     // Using if constexpr to handle both void and non-void functions.
@@ -159,6 +230,7 @@ auto execute_timed(const std::string& startText, const std::string& endText, Fun
         const std::chrono::duration<double> duration = end_time - start_time;
         std::printf("%s Took: %.6f seconds\n", endText.c_str(), duration.count());
         std::fflush(stdout);
+
         return result; // Return the result
     }
 }

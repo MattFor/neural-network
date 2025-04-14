@@ -1,16 +1,17 @@
+//
+// Created by MattFor on 12.04.2025.
+//
+
 // Layer.h
 // Represents a layer of neurons in a neural network.
 
 #ifndef LAYER_H
 #define LAYER_H
 
+#include <span>    // For std::span
 #include <vector>
 #include <cstddef> // For std::size_t
-#include <span>    // For std::span
 
-// Forward declaration if Neuron.h includes Layer.h (avoid circular dependency)
-// class Neuron;
-// Include Neuron header - Make sure Neuron.h doesn't include Layer.h
 #include "Neuron.h"
 
 /**
@@ -21,9 +22,10 @@
  */
 class Layer
 {
-private:
     std::vector<Neuron> neurons; ///< Neurons composing this layer.
     std::vector<double> outputs; ///< Cached output activations from the last feed_forward pass.
+
+    ActivationType layer_activation_type;
 
 public:
     /**
@@ -31,13 +33,17 @@ public:
      * @param num_neurons The number of neurons in this layer.
      * @param num_inputs_per_neuron The number of inputs connecting to EACH neuron
      * (i.e., the number of neurons in the previous layer).
+     * @param activation Which activation function should we use for our neurons.
      * @param weight_init_min Minimum value for random weight/bias initialization (passed to neurons).
      * @param weight_init_max Maximum value for random weight/bias initialization (passed to neurons).
      */
-    explicit Layer(std::size_t num_neurons,
-                   std::size_t num_inputs_per_neuron,
-                   double      weight_init_min = -0.5,
-                   double      weight_init_max = 0.5);
+    Layer(
+        std::size_t    num_neurons,
+        std::size_t    num_inputs_per_neuron,
+        ActivationType activation,
+        double         weight_init_min = -0.5,
+        double         weight_init_max = 0.5
+    );
 
     /**
      * @brief Performs a feed-forward pass for this layer.
@@ -50,7 +56,8 @@ public:
      * @throws std::invalid_argument if the size of inputs does not match num_inputs_per_neuron.
      * @note This method is not const because it calls the non-const Neuron::activate.
      */
-    [[nodiscard]] const std::vector<double>& feed_forward(std::span<const double> inputs);
+    [[nodiscard]]
+    const std::vector<double>& feed_forward(std::span<const double> inputs);
 
     /**
      * @brief Performs backpropagation for this layer.
@@ -71,14 +78,20 @@ public:
      * If `nullptr`, this layer is treated as the output layer.
      * If not `nullptr`, it's treated as a hidden layer, and gradients
      * are calculated based on the weights and gradients of the `next_layer`.
+     * @param gradient_clip_threshold Apply clipping to the gradient to prevent data going out of scope.
      * @throws std::out_of_range If treated as output layer and `error_signals.size()` doesn't match neuron count.
      * @throws std::invalid_argument If `prev_layer_outputs.size()` doesn't match `num_inputs_per_neuron`.
      * @note Assumes Neuron class has `set_gradient` method if gradient clipping is enabled internally.
      */
-    void backpropagate(std::span<const double> error_signals,
-                       std::span<const double> prev_layer_outputs,
-                       double                  learning_rate,
-                       const Layer*            next_layer_ptr);
+    void backpropagate(
+        std::span<const double> error_signals,
+        std::span<const double> prev_layer_outputs,
+        double                  learning_rate,
+        const Layer*            next_layer_ptr,
+        double                  gradient_clip_threshold // Default is 0.0 (no clipping)
+    );
+
+    // --- Getters ---
 
     /**
      * @brief Gets the cached output activations from the last feed-forward pass.
@@ -97,7 +110,13 @@ public:
     * @return A reference to the vector of Neuron objects.
     * @warning Modifying neurons directly can affect network state. Use with caution.
     */
-    [[nodiscard]] std::vector<Neuron>& get_neurons_mut() noexcept; // Added if mutable access needed externally
+    [[nodiscard]] std::vector<Neuron>& get_neurons_mut() noexcept;
+
+    /**
+     * @brief Gets the activation function type used by neurons in this layer.
+     * @return The ActivationType enum value for this layer.
+     */
+    [[nodiscard]] ActivationType get_activation_type() const noexcept;
 
     /**
      * @brief Gets the number of neurons in this layer.

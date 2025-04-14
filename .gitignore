@@ -1,0 +1,5 @@
+.idea
+cmake-build-debug
+
+data/mnist/mnist_test.csv
+data/mnist/mnist_train.csv

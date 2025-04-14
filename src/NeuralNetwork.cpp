@@ -1,3 +1,7 @@
+//
+// Created by MattFor on 12.04.2025.
+//
+
 // NeuralNetwork.cpp
 // Implementation file for the NeuralNetwork class.
 
@@ -6,21 +10,21 @@
 
 // Include necessary standard library headers
 #include <span>
-#include <vector>
 #include <cmath>     // For std::log, std::max, std::min in compute_loss
-#include <numeric>   // Potentially for std::accumulate, std::iota
-#include <stdexcept> // For std::runtime_error, std::invalid_argument
-#include <algorithm> // For std::min, std::max (if not using <cmath>)
+#include <vector>
 #include <chrono>    // For timing in train
-#include <iostream>  // For std::cout in display_topology
-#include <iomanip>   // For std::setw, std::left in display_topology
 #include <limits>    // For std::numeric_limits (used in compute_loss epsilon definition conceptually)
 #include <string>    // For std::to_string, std::string
 #include <cstdio>    // For std::printf, std::fflush in train
-#include <typeinfo>  // For typeid in display_topology
 #include <format>    // For std::format (requires C++20)
+#include <numeric>   // Potentially for std::accumulate, std::iota
+#include <iomanip>   // For std::setw, std::left in display_topology
+#include <iostream>  // For std::cout in display_topology
+#include <algorithm> // For std::min, std::max (if not using <cmath>)
+#include <fstream>
+#include <stdexcept> // For std::runtime_error, std::invalid_argument
+#include <bits/random.h>
 
-// Implementation for display_topology
 void NeuralNetwork::display_topology() const
 {
     std::cout << "\n--- Neural Network Topology ---\n\n";
@@ -28,67 +32,99 @@ void NeuralNetwork::display_topology() const
     std::cout << "-----------------------------\n";
 
     // Define column widths for formatting
-    constexpr int     col_width_index   = 7;
-    constexpr int     col_width_neurons = 9;
-    constexpr int     col_width_inputs  = 15;
-    constexpr int     col_width_type    = 12; // Adjusted for typical Layer name
-    const std::string header_sep        = " | ";
-    const std::string row_sep           = "| ";
+    constexpr int col_width_index      = 7;
+    constexpr int col_width_neurons    = 9;
+    constexpr int col_width_inputs     = 15;
+    constexpr int col_width_type       = 12;
+    constexpr int col_width_activation = 11; // New column width for activation function
 
-    // Print table header
+    const std::string header_sep = " | ";
+    const std::string row_sep    = "| ";
+
+    // Print table header - Added Activation column
     std::cout << std::left
             << row_sep << std::setw(col_width_index) << "Layer #"
             << header_sep << std::setw(col_width_type) << "Type"
-            << header_sep << std::setw(col_width_neurons) << "Neurons"
+            << header_sep << std::setw(col_width_activation) << "Activation" // New Header
             << header_sep << std::setw(col_width_inputs) << "#Inputs/Neuron"
+            << header_sep << std::setw(col_width_neurons) << "Neurons"
             << " |\n";
 
-    // Print separator line based on calculated width
-    const int total_width = col_width_index + col_width_type + col_width_neurons + col_width_inputs
-                            + header_sep.length() * 3 + row_sep.length() + 2; // +2 for start/end |
+    // Print separator line based on calculated width - Adjusted for new column
+    const auto total_width = col_width_index + col_width_type + col_width_activation + col_width_neurons +
+                             col_width_inputs
+                             + header_sep.length() * 4 // Adjusted: 4 separators
+                             + row_sep.length() + 2;   // +2 for start/end |
     std::cout << std::string(total_width, '-') << "\n";
 
+    std::cout << std::string(total_width, '-') << "\n";
+    std::cout << std::left
+            << row_sep << std::setw(col_width_index) << -1 // Use -1 or a special index
+            << header_sep << std::setw(col_width_type) << "Input"
+            << header_sep << std::setw(col_width_activation) << "N/A" // Input layer typically has no activation
+            << header_sep << std::setw(col_width_inputs) << "N/A"     // Input layer has no preceding layer
+            << header_sep << std::setw(col_width_neurons) << this->input_size
+            << " |\n";
+    std::cout << std::string(total_width, '-') << "\n";
 
     // Iterate through layers
-    for (std::size_t i = 0; i < this->layers.size(); ++i)
+    for (std::size_t i = 0; i < this->layers.size(); i++)
     {
-        const auto&       layer                 = this->layers[i];
-        const std::size_t num_neurons           = layer.size(); // Use layer.size()
-        std::size_t       num_inputs_per_neuron = (i == 0) ? this->input_size : this->layers[i - 1].size();
+        const auto& layer = this->layers[i];
+        // Assuming Layer class stores its neuron count directly or via neurons.size()
+        const std::size_t num_neurons = layer.get_neurons().size(); // Get neuron count
+        // Input size for this layer is the neuron count of the previous layer (or network input size for the first layer)
+        const std::size_t num_inputs_per_neuron =
+                i == 0 ? this->input_size : this->layers[i - 1].get_neurons().size();
 
-        // Simplify type display - typeid().name() can be mangled
-        std::string layer_type = (i == this->layers.size() - 1) ? "Output" : "Hidden";
+        // Determine layer type (Hidden or Output)
+        std::string layer_type_str = i == this->layers.size() - 1 ? "Output" : "Hidden";
 
+        // Get activation type string using the helper function
+        std::string activation_str = activation_to_string(layer.get_activation_type());
+
+        // Print layer information row - Added Activation string
         std::cout << std::left
                 << row_sep << std::setw(col_width_index) << i
-                << header_sep << std::setw(col_width_type) << layer_type
-                << header_sep << std::setw(col_width_neurons) << num_neurons
+                << header_sep << std::setw(col_width_type) << layer_type_str
+                << header_sep << std::setw(col_width_activation) << activation_str // New Column Data
                 << header_sep << std::setw(col_width_inputs) << num_inputs_per_neuron
+                << header_sep << std::setw(col_width_neurons) << num_neurons
                 << " |\n";
 
         // Optional: Display sample weights/bias from the first neuron
         if (!layer.get_neurons().empty())
         {
-            const auto&  neuron  = layer.get_neurons().front();
+            const auto&  neuron  = layer.get_neurons().front(); // Access first neuron
             const auto&  weights = neuron.get_weights();
             const double bias    = neuron.get_bias();
-            std::cout << row_sep << std::string(col_width_index, ' ') // Indent
+
+            // Print sample weights and bias, indented
+            std::cout << row_sep << std::string(col_width_index, ' ') // Indentation
                     << " Sample W: [";
-            for (size_t w_idx = 0; w_idx < std::min(weights.size(), size_t{3}); ++w_idx)
+            // Print first few weights
+            for (size_t w_idx = 0; w_idx < std::min(weights.size(), size_t{3}); w_idx++)
             {
-                std::cout << std::fixed << std::setprecision(3) << weights[w_idx] << (
-                    w_idx < 2 && w_idx < weights.size() - 1 ? ", " : "");
+                std::cout << std::fixed << std::setprecision(3) << weights[w_idx]
+                        << (w_idx < 2 && w_idx < weights.size() - 1 ? ", " : "");
             }
+
             if (weights.size() > 3)
+            {
                 std::cout << ", ...";
+            } // Indicate more weights
+
             std::cout << "], Bias: " << std::fixed << std::setprecision(3) << bias << "\n";
         }
+
+        // Print separator line after each layer's details
         std::cout << std::string(total_width, '-') << "\n";
     }
+
+    // Print final output size
     std::cout << "Output Size: " << this->output_size << "\n";
     std::cout << "-----------------------------\n\n";
 }
-
 
 // Implementation for feed_forward (single sample)
 // Note: Removed 'const'
@@ -103,7 +139,7 @@ std::vector<double> NeuralNetwork::feed_forward(std::span<const double> input)
 
     // Use a temporary vector to hold activations, starting with the input
     // Copy input span to activation vector
-    std::vector<double> current_activations(input.begin(), input.end());
+    std::vector current_activations(input.begin(), input.end());
 
     // Propagate through each layer
     // Must use non-const reference to layer because layer.feed_forward is non-const
@@ -133,7 +169,7 @@ std::vector<std::vector<double>> NeuralNetwork::feed_forward(const std::vector<s
     {
         // No need to check size here again if single feed_forward does it
         // std::span constructor performs no allocation
-        results.push_back(feed_forward(std::span<const double>(sample)));
+        results.push_back(feed_forward(std::span(sample)));
     }
 
     return results;
@@ -141,9 +177,9 @@ std::vector<std::vector<double>> NeuralNetwork::feed_forward(const std::vector<s
 
 // Implementation for backpropagate (single sample)
 void NeuralNetwork::backpropagate(
-    std::span<const double> network_input,
-    std::span<const double> target,
-    double                  learning_rate)
+    const std::span<const double> network_input,
+    const std::span<const double> target,
+    const double                  learning_rate)
 {
     // Basic size checks
     if (target.size() != this->output_size)
@@ -167,7 +203,7 @@ void NeuralNetwork::backpropagate(
         Layer& current_layer = this->layers[i]; // Get non-const reference
 
         // Determine the layer *after* this one (in the forward pass)
-        const Layer* next_layer_ptr = (i < this->layers.size() - 1) ? &this->layers[i + 1] : nullptr;
+        const Layer* next_layer_ptr = i < this->layers.size() - 1 ? &this->layers[i + 1] : nullptr;
 
         // Determine the inputs that were fed INTO the current_layer during the forward pass
         std::span<const double> inputs_to_current_layer;
@@ -189,14 +225,14 @@ void NeuralNetwork::backpropagate(
         // Perform backpropagation for the current layer
         // 'target' span is passed. Layer::backpropagate handles whether to use it (output layer)
         // or ignore it (hidden layer, using next_layer_ptr instead).
-        current_layer.backpropagate(target, inputs_to_current_layer, learning_rate, next_layer_ptr);
+        current_layer.backpropagate(target, inputs_to_current_layer, learning_rate, next_layer_ptr, 1.0);
     }
 }
 
 
 // Implementation for predict (single sample)
 // Note: Removed 'const'
-std::vector<double> NeuralNetwork::predict(std::span<const double> input)
+std::vector<double> NeuralNetwork::predict(const std::span<const double> input)
 {
     // Simply performs a forward pass
     return feed_forward(input);
@@ -221,11 +257,11 @@ double NeuralNetwork::compute_loss(const std::vector<double>& output, const std:
     }
 
     double loss = 0.0;
-    // Epsilon to prevent log(0)
-    constexpr double epsilon = 1e-12; // Use a small epsilon
 
-    for (std::size_t i = 0; i < output.size(); ++i)
+    for (std::size_t i = 0; i < output.size(); i++)
     {
+        // Epsilon to prevent log(0)
+        constexpr double epsilon = 1e-12;
         // Clamp predicted value to avoid log(0) or log(1 - >1) issues
         const double predicted  = std::max(epsilon, std::min(1.0 - epsilon, output[i]));
         const double target_val = target[i]; // Assuming target is 0.0 or 1.0
@@ -244,7 +280,8 @@ void NeuralNetwork::train(
     const std::vector<std::vector<double>>& inputs,
     const std::vector<std::vector<double>>& targets,
     const std::size_t                       epochs,
-    const double                            learning_rate)
+    const double                            learning_rate
+)
 {
     if (inputs.size() != targets.size())
     {
@@ -252,21 +289,27 @@ void NeuralNetwork::train(
             "NeuralNetwork::train: Number of input samples ({}) and target samples ({}) do not match.",
             inputs.size(), targets.size()));
     }
+
     if (inputs.empty())
     {
-        std::cout << "NeuralNetwork::train: Warning - Training dataset is empty." << std::endl;
+        std::cout << "NeuralNetwork::train: Warning - Training dataset is empty." << '\n';
         return;
     }
 
     const std::size_t total_samples         = inputs.size();
     const std::size_t num_labels_per_sample = this->output_size; // Assuming targets[0] is valid if inputs not empty
 
-    std::cout << "\n--- Starting Training ---" << std::endl;
-    std::cout << "Dataset Size: " << total_samples << " samples" << std::endl;
-    std::cout << "Epochs: " << epochs << std::endl;
-    std::cout << "Learning Rate: " << learning_rate << std::endl;
-    std::cout << "-------------------------" << std::endl;
+    std::cout << "\n-------------------------" << '\n';
+    std::cout << "Dataset Size: " << total_samples << " samples" << '\n';
+    std::cout << "Epochs: " << epochs << '\n';
+    std::cout << "Learning Rate: " << learning_rate << '\n';
+    std::cout << "-------------------------" << '\n';
 
+
+    // Create a vector to hold the indices of the samples
+    std::vector<std::size_t> indices(total_samples);
+    // Initialize it with 0, 1, 2, ..., total_samples - 1
+    std::iota(indices.begin(), indices.end(), 0);
 
     for (std::size_t epoch = 0; epoch < epochs; ++epoch)
     {
@@ -274,13 +317,14 @@ void NeuralNetwork::train(
         double      epoch_total_loss           = 0.0;
         std::size_t total_correct_labels_epoch = 0;
 
-        // In a real scenario, you'd shuffle the data each epoch
-        // std::vector<std::size_t> indices(total_samples);
-        // std::iota(indices.begin(), indices.end(), 0);
-        // std::shuffle(indices.begin(), indices.end(), std::mt19937{std::random_device{}()});
-        // for (std::size_t idx : indices) { const auto& input = inputs[idx]; ... }
+        // --- Shuffle Data Indices for This Epoch ---
+        // Shuffle the order in which samples are processed each epoch.
+        // This helps the model generalize better and avoid getting stuck
+        // due to the order of presentation.
+        // Uses a random device to seed the Mersenne Twister engine for better randomness.
+        std::ranges::shuffle(indices, std::mt19937{std::random_device{}()});
 
-        for (std::size_t i = 0; i < total_samples; ++i)
+        for (std::size_t i = 0; i < total_samples; i++)
         {
             // For now, process samples sequentially
             const auto& current_input  = inputs[i];
@@ -300,22 +344,22 @@ void NeuralNetwork::train(
 
             // 1. Forward Pass - Calculate predictions for the current input
             // Need std::span for feed_forward and backpropagate
-            std::span<const double> input_span(current_input);
-            std::vector<double>     output = feed_forward(input_span); // Non-const call
+            const std::span     input_span(current_input);
+            std::vector<double> output = feed_forward(input_span); // Non-const call
 
             // 2. Compute Loss for this sample
             epoch_total_loss += compute_loss(output, current_target);
 
             // 3. Backpropagation - Calculate gradients and update weights
-            std::span<const double> target_span(current_target);
+            const std::span target_span(current_target);
             backpropagate(input_span, target_span, learning_rate);
 
             // 4. (Optional) Calculate Accuracy for this sample
-            for (std::size_t j = 0; j < num_labels_per_sample; ++j)
+            for (std::size_t j = 0; j < num_labels_per_sample; j++)
             {
                 // Threshold prediction at 0.5 for binary classification per label
-                const double predicted_label = (output[j] >= 0.5) ? 1.0 : 0.0;
-                if (std::abs(predicted_label - current_target[j]) < 1e-6) // Compare floating points carefully
+                if (const double predicted_label = output[j] >= 0.5 ? 1.0 : 0.0;
+                    std::abs(predicted_label - current_target[j]) < 1e-6) // Compare floating points carefully
                 {
                     total_correct_labels_epoch++;
                 }
@@ -332,17 +376,140 @@ void NeuralNetwork::train(
 
         // Print epoch summary
         std::printf(
-            "Epoch %*zu/%zu [%.3fs] - Avg Loss: %.6f | Accuracy: %.4f%%\n",
+            "\rEpoch %*zu/%zu [%.3fs] - Avg Loss: %.6f | Accuracy: %.4f%% ",
             static_cast<int>(std::to_string(epochs).length()), // Dynamic width for epoch number
             epoch + 1, epochs,
             epoch_duration.count(),
             avg_epoch_loss,
             epoch_accuracy * 100.0
         );
-        // No \r needed if printing one line per epoch
+
         std::fflush(stdout); // Ensure output is displayed promptly
     }                        // End loop through epochs
 
-    std::cout << "-------------------------" << std::endl;
-    std::cout << "--- Training Finished ---" << std::endl;
+    std::cout << "-------------------------" << '\n';
+    std::cout << "--- Training Finished ---" << '\n';
+}
+
+// Loading and saving weights to binary file
+void NeuralNetwork::save_weights(const std::string& filename) const
+{
+    std::ofstream file(filename, std::ios::binary);
+    if (!file.is_open())
+    {
+        throw std::runtime_error(std::format("Could not open file for saving weights: {}", filename));
+    }
+
+    // Save network topology (layer sizes, activation types)
+    const size_t num_layers = this->layers.size();
+    file.write(reinterpret_cast<const char*>(&this->input_size), sizeof(this->input_size));
+    file.write(reinterpret_cast<const char*>(&this->output_size), sizeof(this->output_size));
+    file.write(reinterpret_cast<const char*>(&num_layers), sizeof(num_layers));
+    for (const auto& layer : this->layers)
+    {
+        ActivationType hidden_activation = layer.get_activation_type();
+        file.write(reinterpret_cast<const char*>(&hidden_activation), sizeof(hidden_activation));
+        size_t num_neurons = layer.get_neurons().size();
+        file.write(reinterpret_cast<const char*>(&num_neurons), sizeof(num_neurons));
+
+        for (const auto& neuron : layer.get_neurons())
+        {
+            double bias        = neuron.get_bias();
+            size_t num_weights = neuron.get_weights().size();
+            file.write(reinterpret_cast<const char*>(&bias), sizeof(bias));
+            file.write(reinterpret_cast<const char*>(&num_weights), sizeof(num_weights));
+            file.write(reinterpret_cast<const char*>(neuron.get_weights().data()),
+                       static_cast<std::streamsize>(num_weights * sizeof(double)));
+        }
+    }
+
+    file.close();
+    std::cout << format("Weights saved to: {}", filename) << '\n';
+}
+
+bool NeuralNetwork::load_weights(const std::string& filename)
+{
+    std::ifstream file(filename, std::ios::binary);
+    if (!file.is_open())
+    {
+        std::cerr << format("Could not open file for loading weights: {}", filename) << '\n';
+        return false;
+    }
+
+    size_t loaded_input_size;
+    size_t loaded_output_size;
+    size_t num_layers;
+
+    if (!file.read(reinterpret_cast<char*>(&loaded_input_size), sizeof(loaded_input_size)) ||
+        !file.read(reinterpret_cast<char*>(&loaded_output_size), sizeof(loaded_output_size)) ||
+        !file.read(reinterpret_cast<char*>(&num_layers), sizeof(num_layers)))
+    {
+        std::cerr << "Error reading network topology from file." << '\n';
+        return false;
+    }
+
+    if (this->layers.size() != num_layers || this->input_size != loaded_input_size || this->output_size !=
+        loaded_output_size)
+    {
+        std::cerr << std::format(
+            "Network topology in file does not match current network (File: Input={}, Output={}, Layers={}; Current: Input={}, Output={}, Layers={}).",
+            loaded_input_size, loaded_output_size, num_layers, this->input_size, this->output_size,
+            this->layers.size()) << '\n';
+        return false;
+    }
+
+    for (size_t i = 0; i < num_layers; ++i)
+    {
+        ActivationType loaded_activation;
+        size_t         num_neurons;
+        if (!file.read(reinterpret_cast<char*>(&loaded_activation), sizeof(loaded_activation)) ||
+            !file.read(reinterpret_cast<char*>(&num_neurons), sizeof(num_neurons)))
+        {
+            std::cerr << std::format("Error reading layer {} info from file.", i) << '\n';
+            return false;
+        }
+
+        if (this->layers[i].get_activation_type() != loaded_activation || this->layers[i].get_neurons().size() !=
+            num_neurons)
+        {
+            std::cerr << std::format(
+                "Layer {} configuration mismatch (File: Activation={}, Neurons={}; Current: Activation={}, Neurons={}).",
+                i, static_cast<int>(loaded_activation), num_neurons,
+                static_cast<int>(this->layers[i].get_activation_type()),
+                this->layers[i].get_neurons().size()) << '\n';
+            return false;
+        }
+
+        for (size_t j = 0; j < num_neurons; ++j)
+        {
+            double bias;
+            size_t num_weights;
+            if (!file.read(reinterpret_cast<char*>(&bias), sizeof(bias)) ||
+                !file.read(reinterpret_cast<char*>(&num_weights), sizeof(num_weights)))
+            {
+                std::cerr << std::format("Error reading neuron {} in layer {} info from file.", j, i) << '\n';
+                return false;
+            }
+
+            if (this->layers[i].get_neurons()[j].get_weights().size() != num_weights)
+            {
+                std::cerr << std::format("Neuron {} in layer {} weight size mismatch (File: {}; Current: {}).",
+                                         j, i, num_weights,
+                                         this->layers[i].get_neurons()[j].get_weights().size()) << '\n';
+                return false;
+            }
+
+            if (!file.read(reinterpret_cast<char*>(this->layers[i].get_neurons()[j].get_weights().data()),
+                           num_weights * sizeof(double)))
+            {
+                std::cerr << std::format("Error reading weights for neuron {} in layer {} from file.", j, i) <<
+                        '\n';
+                return false;
+            }
+
+            this->layers[i].get_neurons()[j].set_bias(bias);
+        }
+    }
+
+    return true;
 }

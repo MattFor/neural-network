@@ -1,22 +1,95 @@
+//
+// Created by MattFor on 12.04.2025.
+//
+
 // Neuron.h
 // Represents a single neuron in a neural network layer.
 
 #ifndef NEURON_H
 #define NEURON_H
 
+#include <format>    // For error messages (requires C++20)
 #include <vector>
-#include <cstddef> // For std::size_t
-#include <cmath>   // For std::exp, std::clamp
-#include <random>  // For weight initialization
+#include <cmath>     // For std::exp, std::clamp
+#include <cstddef>   // For std::size_t
+#include <concepts>  // For std::convertible_to (requires C++20)
 #include <stdexcept> // For exceptions
-#include <numeric>   // For std::transform_reduce
-#include <execution> // For std::execution::unseq
-#include <algorithm> // For std::transform
-#include <functional> // For std::plus
-#include <ranges>     // For concepts/range checks (requires C++20)
-#include <concepts>   // For std::convertible_to (requires C++20)
-#include <format>     // For error messages (requires C++20)
-#include <span>       // If needed for LayerType get_weights() interface
+
+/**
+ * @brief Enumeration of supported activation functions (applied per-neuron).
+ * @note Softmax is handled at the Layer level due to interneuron dependency.
+ */
+enum class ActivationType
+{
+    SIGMOID,    ///< Sigmoid activation function (output range (0, 1))
+    RELU,       ///< Rectified Linear Unit activation function (output range [0, inf))
+    LEAKY_RELU, ///< Leaky Rectified Linear Unit activation function
+    TANH        ///< Hyperbolic Tangent activation function (output range (-1, 1))
+};
+
+inline ActivationType int_to_activation(const int choice)
+{
+    switch (choice)
+    {
+        case 1:
+        {
+            return ActivationType::RELU;
+        }
+        case 2:
+        {
+            return ActivationType::LEAKY_RELU;
+        }
+        case 3:
+        {
+            return ActivationType::TANH;
+        }
+        case 4:
+        {
+            return ActivationType::SIGMOID;
+        }
+        default:
+        {
+            throw std::invalid_argument("Invalid activation function choice number: " + std::to_string(choice));
+        }
+    }
+}
+
+inline std::string activation_to_string(const ActivationType type)
+{
+    switch (type)
+    {
+        case ActivationType::SIGMOID:
+        {
+            return "Sigmoid";
+        }
+
+        case ActivationType::RELU:
+        {
+            return "ReLU";
+        }
+
+        case ActivationType::LEAKY_RELU:
+        {
+            return "LeakyReLU";
+        }
+
+        case ActivationType::TANH:
+        {
+            return "Tanh";
+        }
+
+        default:
+        {
+            return "Unknown";
+        }
+    }
+}
+
+// Clamping constants to prevent overflow/underflow issues
+static constexpr double MAX_EXP_INPUT = 709.0; // ~log(DBL_MAX) for exp used in sigmoid/tanh safe versions
+// Value just below 1.0 to prevent potential issues (e.g. in derivative if output is exactly +/-1.0)
+static constexpr double MAX_TANH_OUTPUT = std::nextafter(1.0, 0.0);
+static constexpr double LRELU_ALPHA     = 0.01; // Standard alpha for Leaky ReLU
 
 // Prevents overflow/underflow in std::exp during sigmoid calculation.
 static constexpr double MAX_SIGMOID_INPUT = 34.538776394910684; // Approx log(DBL_MAX)
@@ -29,40 +102,56 @@ static constexpr double MAX_SIGMOID_INPUT = 34.538776394910684; // Approx log(DB
  */
 class Neuron
 {
-private:
-    double              bias;     ///< Bias value for this neuron.
-    std::vector<double> weights;  ///< Weights connecting inputs from the previous layer.
-    double              output;   ///< Stores the last calculated output (activation) value.
-    double              gradient; ///< Stores the gradient (delta) calculated during backpropagation.
+    double bias;           ///< Bias value for this neuron.
+    double output;         ///< Stores the last calculated output (activation) value.
+    double gradient;       ///< Stores the gradient (delta) calculated during backpropagation.
+    double last_net_input; ///< Stores the last net input (weighted_sum + bias) needed for some derivatives.
 
-    /**
-     * @brief Sigmoid activation function.
-     * @param x The input value (weighted sum + bias).
-     * @return The activated value between 0 and 1.
-     * @note Clamps input to [-MAX_SIGMOID_INPUT, MAX_SIGMOID_INPUT] to prevent std::exp overflow.
-     */
-    [[nodiscard]] static double sigmoid(double x) noexcept;
+    std::vector<double> weights; ///< Weights connecting inputs from the previous layer.
 
-    /**
-     * @brief Derivative of the sigmoid function.
-     * @param sigmoid_output The output of the sigmoid function (sigmoid(x)).
-     * @return The value of the sigmoid derivative at x.
-     * @note Takes sigmoid_output as input for efficiency, as output is often already computed.
-     */
-    [[nodiscard]] static double sigmoid_derivative(double sigmoid_output) noexcept;
+    ActivationType activation_type;
+
+    // --- Activation Functions (Static Private Helpers) ---
+    [[nodiscard]] static double activation_relu(double x) noexcept;
+    [[nodiscard]] static double activation_tanh(double x) noexcept;
+    [[nodiscard]] static double activation_sigmoid(double x) noexcept;
+    [[nodiscard]] static double activation_leaky_relu(double x) noexcept;
+
+    // --- Activation Derivatives (Static Private Helpers) ---
+    [[nodiscard]] static double derivative_relu(double net_input) noexcept;
+    [[nodiscard]] static double derivative_tanh(double tanh_output) noexcept;
+    [[nodiscard]] static double derivative_leaky_relu(double net_input) noexcept;
+    [[nodiscard]] static double derivative_sigmoid(double sigmoid_output) noexcept;
+
+    /** @brief Applies the neuron's configured activation function to the net input. */
+    [[nodiscard]] double apply_activation(double net_input) const noexcept;
+
+    /** @brief Applies the derivative of the neuron's configured activation function. */
+    [[nodiscard]] double apply_derivative() const noexcept;
 
 public:
     /**
      * @brief Constructs a Neuron.
      * @param num_inputs The number of inputs connecting to this neuron (size of the previous layer).
+     * @param activation Which activation function to use, default: SIGMOID
      * @param weight_init_min Minimum value for random weight/bias initialization.
      * @param weight_init_max Maximum value for random weight/bias initialization.
      * @note Weights and bias are initialized randomly within the specified range.
      */
-    explicit Neuron(std::size_t num_inputs, double weight_init_min = -0.5, double weight_init_max = 0.5);
+    explicit Neuron(
+        std::size_t    num_inputs,
+        ActivationType activation      = ActivationType::SIGMOID,
+        double         weight_init_min = -0.5,
+        double         weight_init_max = 0.5
+    );
 
     /**
      * @brief Calculates the neuron's output based on inputs from the previous layer.
+     *
+     * Computes the weighted sum of inputs plus the bias (net input), stores
+     * this net input, applies the neuron's configured activation function,
+     * stores the result, and returns it.
+     *
      * @param inputs A vector of output values from the neurons in the previous layer.
      * @return The calculated activation value (also stored internally).
      * @throws std::invalid_argument if input size doesn't match the number of weights.
@@ -71,6 +160,15 @@ public:
 
     /**
      * @brief Computes the gradient for this neuron if it's in the output layer.
+     *
+     * Calculates the gradient (delta) for an output neuron using the formula:
+     * delta = (target - output) * f'(net_input)
+     * where f'(net_input) is the derivative of the neuron's activation function
+     * evaluated appropriately (using either net_input or output depending on the function).
+     * Assumes the derivative of the loss function with respect to the neuron's
+     * activation ('output') is simply (target - output). This is common for losses
+     * like Mean Squared Error or when using the simplified Softmax+CrossEntropy derivative.
+     *
      * @param target The target value for this neuron.
      * @note The gradient is stored internally.
      */
@@ -91,7 +189,6 @@ public:
      * @throws std::out_of_range if `index_in_this_layer` is invalid for a neuron in the next layer.
      */
     template <typename LayerType>
-    // C++20 Concept to constrain LayerType (optional but recommended)
         requires requires(const LayerType l, const std::ranges::range_value_t<decltype(l.get_neurons())> n)
         {
             { l.get_neurons() } -> std::ranges::range; // Must have get_neurons() returning a range
@@ -113,48 +210,66 @@ public:
     // --- Getters ---
 
     /** @brief Gets the last calculated output value. */
-    [[nodiscard]] double get_output() const noexcept { return output; }
+    [[nodiscard]] double get_output() const noexcept;
 
     /** @brief Gets the calculated gradient (delta). */
-    [[nodiscard]] double get_gradient() const noexcept { return gradient; }
+    [[nodiscard]] double get_gradient() const noexcept;
 
     /** @brief Gets the bias value. */
-    [[nodiscard]] double get_bias() const noexcept { return bias; }
+    [[nodiscard]] double get_bias() const noexcept;
 
     /** @brief Gets the vector of input weights. */
-    [[nodiscard]] const std::vector<double>& get_weights() const noexcept { return weights; }
+    [[nodiscard]] const std::vector<double>& get_weights() const noexcept;
+
+    // --- Setters ---
+
+    /** @brief For clipping the gradient. */
+    void set_gradient(double new_gradient) noexcept;
 };
 
-
-// --- Template Implementation for compute_hidden_gradient ---
-// Needs to be in the header file or included at the end of the header if definitions are separated.
-
+/**
+ * @brief Computes the gradient for this neuron if it's in a hidden layer.
+ *
+ * Calculates the gradient (delta) for a hidden neuron 'j' using the formula:
+ * delta_j = (Sum_k w_jk * delta_k) * f'(net_j)
+ * where 'k' represents neurons in the next layer, w_jk is the weight connecting
+ * neuron 'j' to neuron 'k', delta_k is the gradient of neuron 'k', and f'(net_j)
+ * is the derivative of this neuron's activation function evaluated at its net input.
+ * The specific derivative function used depends on the neuron's configured activation type.
+ *
+ * (See Neuron.h for detailed template parameter and exception documentation)
+ *
+ * @tparam LayerType The type of the next layer in the network. Must satisfy constraints defined in Neuron.h.
+ * @param index_in_this_layer The index 'j' of this neuron within its own layer.
+ * @param next_layer A constant reference to the layer immediately following this one.
+ */
 template <typename LayerType>
-// Add the requires clause again if not using separate include for template definitions
     requires requires(const LayerType l, const std::ranges::range_value_t<decltype(l.get_neurons())> n)
     {
-        { l.get_neurons() } -> std::ranges::range;
-        { n.get_weights() } -> std::ranges::range;
-        { n.get_gradient() } -> std::convertible_to<double>;
+        // Constraints ensure the LayerType and its neurons provide necessary methods
+        { l.get_neurons() } -> std::ranges::range;           // Must be able to get neurons as a range
+        { n.get_weights() } -> std::ranges::range;           // Neurons must provide weights as a range
+        { n.get_gradient() } -> std::convertible_to<double>; // Neurons must provide a gradient value
     }
 void Neuron::compute_hidden_gradient(std::size_t index_in_this_layer, const LayerType& next_layer)
 {
+    // --- Calculate Sum of Weighted Gradients from Next Layer ---
     double      sum_weighted_gradients = 0.0;
-    const auto& next_neurons           = next_layer.get_neurons(); // Get the range of neurons in the next layer
+    const auto& next_neurons           = next_layer.get_neurons(); // Get neurons from the layer ahead
+    std::size_t k                      = 0;                        // Index for debugging/error messages
 
-    // Iterate through neurons 'k' in the next layer
-    std::size_t k = 0; // Keep track of neuron index in next layer for error messages
+    // Iterate through each neuron 'k' in the next layer
     for (const auto& next_neuron : next_neurons)
     {
-        // Get weights w_jk (weight from neuron 'j' [this] to neuron 'k' [next_neuron])
-        const auto& weights_of_next_neuron = next_neuron.get_weights(); // Requires NeuronType::get_weights()
+        // Get the weights vector of the k-th neuron in the next layer
+        const auto& weights_of_next_neuron = next_neuron.get_weights();
+        const auto  num_weights_in_next    = std::ranges::size(weights_of_next_neuron);
 
-        // Use std::ranges::size or .size() depending on what get_weights() returns
-        const auto num_weights_in_next = std::ranges::size(weights_of_next_neuron);
-        // const auto num_weights_in_next = weights_of_next_neuron.size(); // Alternative if it's a container
-
+        // --- Topology Validation ---
+        // Ensure the current neuron's index ('j') is valid for the weight vector of the next neuron ('k')
         if (index_in_this_layer >= num_weights_in_next)
         {
+            // This indicates a mismatch in expected network structure
             throw std::out_of_range(std::format(
                 "Neuron::compute_hidden_gradient: Index of this neuron ({}) is out of bounds "
                 "for the weights of neuron {} in the next layer (size {}). "
@@ -162,22 +277,27 @@ void Neuron::compute_hidden_gradient(std::size_t index_in_this_layer, const Laye
                 index_in_this_layer, k, num_weights_in_next));
         }
 
-        // Access weight w_jk. This assumes weights are indexable or uses std::ranges:: C++20 access
-        // Using iterators is safer if the exact type returned by get_weights() isn't known
+        // --- Access Weight w_jk ---
+        // Get the specific weight connecting this neuron ('j') to the next neuron ('k').
+        // Using iterators for safety, as get_weights() returns a range.
         auto weight_it = std::ranges::begin(weights_of_next_neuron);
-        std::ranges::advance(weight_it, index_in_this_layer);
-        const double weight_jk = *weight_it;
-        // const double weight_jk = weights_of_next_neuron[index_in_this_layer]; // Alternative if indexable
+        std::ranges::advance(weight_it, index_in_this_layer); // Move iterator to the j-th weight
+        const double weight_jk = *weight_it;                  // Dereference to get the weight value
 
-        const double gradient_k = next_neuron.get_gradient(); // Requires NeuronType::get_gradient()
+        // Get the gradient (delta_k) already computed for the k-th neuron in the next layer
+        const double gradient_k = next_neuron.get_gradient();
+
+        // Add the contribution to the sum: w_jk * delta_k
         sum_weighted_gradients += weight_jk * gradient_k;
-        ++k;
+        ++k; // Increment index for next neuron in the next layer
     }
 
+    // --- Calculate Final Gradient for This Hidden Neuron ---
     // Gradient (delta) for hidden neuron 'j' = sum(w_jk * delta_k) * f'(net_j)
-    // where f'(net_j) is sigmoid_derivative(output)
-    this->gradient = sum_weighted_gradients * sigmoid_derivative(this->output);
+    // where f'(net_j) is the derivative of this neuron's activation function.
+    // We use the apply_derivative() helper which selects the correct derivative
+    // based on this->activation_type (using this->output or this->last_net_input as needed).
+    this->gradient = sum_weighted_gradients * apply_derivative();
 }
-
 
 #endif // NEURON_H

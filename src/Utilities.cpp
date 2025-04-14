@@ -1,3 +1,7 @@
+//
+// Created by MattFor on 12.04.2025.
+//
+
 // Utilities.cpp
 // Implementation file for utility functions.
 // Created by MattFor on 13/04/2025. (Date corrected)
@@ -5,205 +9,128 @@
 #include "../include/Utilities.h" // Include own header first
 #include "../include/NeuralNetwork.h" // Need full definition for evaluate_network
 
-// Other necessary standard library headers are included via Utilities.h now
-double stringToDouble(const std::string& str) {
-    try {
-        return std::stod(str);
-    } catch (const std::invalid_argument& e) {
-        throw std::invalid_argument("Invalid argument: Could not convert string to double: " + str);
-    } catch (const std::out_of_range& e) {
-        throw std::out_of_range("Out of range: Value too large or too small to convert to double: " + str);
-    }
-}
-
-// Function to load and preprocess the zoo.csv file
-void load_zoo_data(const std::string& filename, std::vector<std::vector<double>>& inputs, std::vector<std::vector<double>>& targets, std::size_t& num_attributes, std::size_t& num_targets) {
-    std::ifstream file(filename);
-    if (!file.is_open()) {
-        throw std::runtime_error("Could not open file: " + filename);
-    }
-
-    std::string line;
-    std::vector<int> unique_labels;
-
-    // First pass to determine unique labels
-    while (std::getline(file, line)) {
-        std::stringstream ss(line);
-        std::string token;
-        std::vector<std::string> row_data;
-        while (std::getline(ss, token, ',')) {
-            row_data.push_back(token);
-        }
-        if (row_data.size() > 1) {
-            try {
-                int label = std::stoi(row_data.back());
-                if (std::find(unique_labels.begin(), unique_labels.end(), label) == unique_labels.end()) {
-                    unique_labels.push_back(label);
-                }
-            } catch (const std::invalid_argument& e) {
-                std::cerr << "Warning: Could not parse label in row: " << line << std::endl;
-            } catch (const std::out_of_range& e) {
-                std::cerr << "Warning: Label out of range in row: " << line << std::endl;
-            }
-        }
-    }
-    std::sort(unique_labels.begin(), unique_labels.end());
-    num_targets = unique_labels.size();
-
-    // Second pass to load data and create one-hot targets
-    file.clear();
-    file.seekg(0, std::ios::beg);
-
-    while (std::getline(file, line)) {
-        std::stringstream ss(line);
-        std::string token;
-        std::vector<double> attribute_row;
-        std::string label_str;
-        std::vector<std::string> row_data;
-        while (std::getline(ss, token, ',')) {
-            row_data.push_back(token);
-        }
-
-        if (row_data.size() > 2) { // Ensure at least one attribute and a label
-            // Extract attributes (skip the first element which is the animal name)
-            for (size_t i = 1; i < row_data.size() - 1; ++i) {
-                try {
-                    attribute_row.push_back(stringToDouble(row_data[i]));
-                } catch (const std::exception& e) {
-                    std::cerr << "Warning: Skipping attribute in row '" << line << "': " << e.what() << std::endl;
-                    attribute_row.clear();
-                    break;
-                }
-            }
-
-            if (!attribute_row.empty()) {
-                inputs.push_back(attribute_row);
-                num_attributes = attribute_row.size(); // Set number of attributes based on the first valid row
-
-                // Extract and one-hot encode the label
-                label_str = row_data.back();
-                try {
-                    int label = std::stoi(label_str);
-                    std::vector<double> target_row(num_targets, 0.0);
-                    auto it = std::find(unique_labels.begin(), unique_labels.end(), label);
-                    if (it != unique_labels.end()) {
-                        size_t index = std::distance(unique_labels.begin(), it);
-                        if (index < num_targets) {
-                            target_row[index] = 1.0;
-                        } else {
-                            std::cerr << "Error: Calculated target index is out of bounds." << std::endl;
-                        }
-                    } else {
-                        std::cerr << "Warning: Label '" << label << "' not found in unique labels." << std::endl;
-                    }
-                    targets.push_back(target_row);
-                } catch (const std::exception& e) {
-                    std::cerr << "Warning: Could not process label '" << label_str << "' in row '" << line << "': " << e.what() << std::endl;
-                }
-            }
-        } else {
-            std::cerr << "Warning: Skipping row with insufficient data: " << line << std::endl;
-        }
-    }
-
-    file.close();
-
-    if (inputs.empty()) {
-        throw std::runtime_error("No data loaded from the CSV file.");
-    }
-}
 // Display multi-label training data
 void display_train_data(
     const std::vector<std::vector<double>>& train_inputs,
     const std::vector<std::vector<double>>& train_targets,
-    const std::size_t num_attributes
+    const std::size_t                       num_attributes
 )
 {
-    if (train_inputs.empty() || train_targets.empty()) {
-        std::cout << "No training data to display." << std::endl;
+    if (train_inputs.empty() || train_targets.empty())
+    {
+        std::cout << "No training data to display." << '\n';
         return;
     }
-    if (train_inputs.size() != train_targets.size()){
-         std::cerr << "Warning: Mismatch between number of input samples and target samples in display_train_data." << std::endl;
-         // Decide whether to proceed or return
-         // return;
+
+    if (train_inputs.size() != train_targets.size())
+    {
+        std::cerr << "Warning: Mismatch between number of input samples and target samples in display_train_data." <<
+                '\n';
+        return;
     }
 
     // Determine approximate width needed for features display
-    std::size_t feature_width = num_attributes * 6; // Estimate width based on number format below
-    feature_width = std::max(feature_width, std::size_t{15}); // Minimum width
+    std::size_t feature_width = num_attributes * 6;                       // Estimate width based on number format below
+    feature_width             = std::max(feature_width, std::size_t{15}); // Minimum width
 
     std::cout << "\n--- Sample Training Data ---\n";
     // Print headers
-    std::cout << std::left << std::setw(feature_width) << "Input Features" << " | " << "Target Vector (One-Hot)" << std::endl;
-    std::cout << std::string(feature_width + 28, '-') << std::endl; // Adjust separator width
+    std::cout << std::left << std::setw(static_cast<int>(feature_width)) << "Input Features" << " | " <<
+            "Target Vector (One-Hot)" <<
+            '\n';
+    std::cout << std::string(feature_width + 28, '-') << '\n'; // Adjust separator width
 
     // Print a few rows of training data (e.g., first 5 and last 5)
-    const std::size_t display_count = 5;
-    for (std::size_t i = 0; i < std::min(train_inputs.size(), display_count); ++i)
+    constexpr std::size_t display_count = 5;
+    for (std::size_t i = 0; i < std::min(train_inputs.size(), display_count); i++)
     {
         // Print feature vector
-        std::cout << std::left << std::setw(feature_width);
+        std::cout << std::left << std::setw(static_cast<int>(feature_width));
         std::stringstream ss_features;
-        for (std::size_t j = 0; j < train_inputs[i].size(); ++j)
+        for (std::size_t j = 0; j < train_inputs[i].size(); j++)
         {
-             ss_features << std::fixed << std::setprecision(2) << train_inputs[i][j] << (j < train_inputs[i].size() - 1 ? " " : "");
+            ss_features << std::fixed << std::setprecision(2) << train_inputs[i][j] << (j < train_inputs[i].size() - 1
+                ? " "
+                : "");
         }
         std::cout << ss_features.str();
 
         std::cout << " | ";
 
         // Print target vector
-        if (i < train_targets.size()) { // Check bounds for targets as well
+        if (i < train_targets.size())
+        {
+            // Check bounds for targets as well
             for (const auto& val : train_targets[i])
             {
                 std::cout << static_cast<int>(val) << " "; // Print targets as 0 or 1
             }
         }
-        std::cout << std::endl;
+        std::cout << '\n';
     }
 
-    if (train_inputs.size() > display_count * 2) {
-         std::cout << std::left << std::setw(feature_width) << "..." << " | ..." << std::endl;
-         for (std::size_t i = train_inputs.size() - display_count; i < train_inputs.size(); ++i) {
-             // Print feature vector
-             std::cout << std::left << std::setw(feature_width);
-             std::stringstream ss_features;
-             for (std::size_t j = 0; j < train_inputs[i].size(); ++j) {
-                 ss_features << std::fixed << std::setprecision(2) << train_inputs[i][j] << (j < train_inputs[i].size() - 1 ? " " : "");
-             }
-             std::cout << ss_features.str();
-             std::cout << " | ";
-             // Print target vector
-             if (i < train_targets.size()) {
-                 for (const auto& val : train_targets[i]) {
-                     std::cout << static_cast<int>(val) << " ";
-                 }
-             }
-             std::cout << std::endl;
-         }
-    } else if (train_inputs.size() > display_count) {
-        // Print remaining if fewer than 2*display_count but more than display_count
-        for (std::size_t i = display_count; i < train_inputs.size(); ++i) {
-             // Print feature vector
-             std::cout << std::left << std::setw(feature_width);
-             std::stringstream ss_features;
-             for (std::size_t j = 0; j < train_inputs[i].size(); ++j) {
-                 ss_features << std::fixed << std::setprecision(2) << train_inputs[i][j] << (j < train_inputs[i].size() - 1 ? " " : "");
-             }
-             std::cout << ss_features.str();
-             std::cout << " | ";
-             // Print target vector
-             if (i < train_targets.size()) {
-                 for (const auto& val : train_targets[i]) {
-                     std::cout << static_cast<int>(val) << " ";
-                 }
-             }
-             std::cout << std::endl;
+    if (train_inputs.size() > display_count * 2)
+    {
+        std::cout << std::left << std::setw(static_cast<int>(feature_width)) << "..." << " | ..." << '\n';
+        for (std::size_t i = train_inputs.size() - display_count; i < train_inputs.size(); i++)
+        {
+            // Print feature vector
+            std::cout << std::left << std::setw(static_cast<int>(feature_width));
+            std::stringstream ss_features;
+
+            for (std::size_t j = 0; j < train_inputs[i].size(); j++)
+            {
+                ss_features << std::fixed << std::setprecision(2) << train_inputs[i][j] << (
+                    j < train_inputs[i].size() - 1 ? " " : "");
+            }
+
+            std::cout << ss_features.str();
+            std::cout << " | ";
+
+            // Print target vector
+            if (i < train_targets.size())
+            {
+                for (const auto& val : train_targets[i])
+                {
+                    std::cout << static_cast<int>(val) << " ";
+                }
+            }
+            std::cout << '\n';
         }
     }
-     std::cout << std::string(feature_width + 28, '-') << std::endl;
-     std::cout << std::endl;
+    else if (train_inputs.size() > display_count)
+    {
+        // Print remaining if fewer than 2*display_count but more than display_count
+        for (std::size_t i = display_count; i < train_inputs.size(); i++)
+        {
+            // Print feature vector
+            std::cout << std::left << std::setw(static_cast<int>(feature_width));
+            std::stringstream ss_features;
+
+            for (std::size_t j = 0; j < train_inputs[i].size(); j++)
+            {
+                ss_features << std::fixed << std::setprecision(2) << train_inputs[i][j] << (
+                    j < train_inputs[i].size() - 1 ? " " : "");
+            }
+
+            std::cout << ss_features.str();
+            std::cout << " | ";
+
+            // Print target vector
+            if (i < train_targets.size())
+            {
+                for (const auto& val : train_targets[i])
+                {
+                    std::cout << static_cast<int>(val) << " ";
+                }
+            }
+
+            std::cout << '\n';
+        }
+    }
+
+    std::cout << std::string(feature_width + 28, '-') << '\n';
+    std::cout << '\n';
 }
 
 
@@ -217,70 +144,77 @@ void generate_data_network(
     std::mt19937&                     rng
 )
 {
-    std::uniform_real_distribution<> input_dist(0.0, 1.0); // Inputs [0, 1]
+    std::uniform_real_distribution input_dist(0.0, 1.0); // Inputs [0, 1]
 
     inputs.resize(num_samples, std::vector<double>(num_attributes));
-    targets.resize(num_samples, std::vector<double>(num_targets, 0.0)); // Initialize targets with zeros
+    targets.resize(num_samples, std::vector(num_targets, 0.0)); // Initialize targets with zeros
 
-    for (std::size_t i = 0; i < num_samples; ++i)
+    for (std::size_t i = 0; i < num_samples; i++)
     {
         // Generate random inputs
-        for (std::size_t j = 0; j < num_attributes; ++j)
+        for (std::size_t j = 0; j < num_attributes; j++)
         {
             inputs[i][j] = input_dist(rng);
         }
 
         // Find the index of the largest input value
         // Use iterators for safety and generality
-        auto max_it = std::max_element(inputs[i].begin(), inputs[i].end());
 
-        if (max_it != inputs[i].end()) // Check if input vector was not empty
+        if (auto max_it = std::max_element(inputs[i].begin(), inputs[i].end()); max_it != inputs[i].end())
+        // Check if input vector was not empty
         {
-            std::size_t target_class_index = std::distance(inputs[i].begin(), max_it);
-
             // Ensure the index is valid for the target vector size
-            if (target_class_index < num_targets)
+            if (const std::size_t target_class_index = std::distance(inputs[i].begin(), max_it);
+                target_class_index < num_targets)
             {
                 targets[i][target_class_index] = 1.0; // Set the one-hot target
             }
             else
             {
-                 // This case should ideally not happen if num_targets >= num_attributes
-                 // or if the task definition changes. Handle gracefully.
-                 std::cerr << "Warning: Max input index (" << target_class_index
-                           << ") exceeds number of target classes (" << num_targets
-                           << ") for sample " << i << ". Setting target to class 0." << std::endl;
-                 if (!targets[i].empty()) targets[i][0] = 1.0;
+                // This case should ideally not happen if num_targets >= num_attributes
+                // or if the task definition changes. Handle gracefully.
+                // std::cerr << "Warning: Max input index (" << target_class_index
+                //         << ") exceeds number of target classes (" << num_targets
+                //         << ") for sample " << i << ". Setting target to class 0." << '\n';
+                if (!targets[i].empty())
+                {
+                    targets[i][0] = 1.0;
+                }
             }
         }
         else if (!targets[i].empty()) // Handle case of empty input vector
         {
-             std::cerr << "Warning: Empty input vector generated for sample " << i << ". Setting target to class 0." << std::endl;
-             targets[i][0] = 1.0; // Default target
+            std::cerr << "Warning: Empty input vector generated for sample " << i << ". Setting target to class 0." <<
+                    '\n';
+            targets[i][0] = 1.0; // Default target
         }
     }
-    std::cout << "Generated " << num_samples << " samples for network training/testing." << std::endl;
+
+    std::cout << "Generated " << num_samples << " samples for network training/testing." << '\n';
 }
 
 
 // Evaluate the network using classification accuracy for one-hot encoded targets
 void evaluate_network(
-    NeuralNetwork& network, // Now const
+    NeuralNetwork&                          network, // Now const
     const std::vector<std::vector<double>>& inputs,
     const std::vector<std::vector<double>>& targets
 )
 {
-    if (inputs.empty()) {
+    if (inputs.empty())
+    {
         std::printf("Evaluation: No test data provided.\n");
         return;
     }
-    if (inputs.size() != targets.size()) {
-         throw std::runtime_error("Evaluation Error: Input and target counts mismatch.");
+
+    if (inputs.size() != targets.size())
+    {
+        throw std::runtime_error("Evaluation Error: Input and target counts mismatch.");
     }
 
-    std::size_t correct_predictions = 0;
-    double total_loss = 0.0;
-    const std::size_t num_samples = inputs.size();
+    std::size_t       correct_predictions = 0;
+    double            total_loss          = 0.0;
+    const std::size_t num_samples         = inputs.size();
 
     // Create a non-const copy IF predict modifies internal state in a way
     // that interferes with subsequent predictions in the loop.
@@ -288,62 +222,331 @@ void evaluate_network(
     // the const reference is fine.
     // NeuralNetwork network_eval = network; // Example if copy needed
 
-    for (std::size_t i = 0; i < num_samples; ++i) {
+    for (std::size_t i = 0; i < num_samples; i++)
+    {
         // Use std::span for prediction
-        std::span<const double> input_span(inputs[i]);
+        const std::span input_span(inputs[i]);
         // Call the const predict method
         std::vector<double> output_vec = network.predict(input_span);
 
         const auto& target_vec = targets[i];
 
-         if (output_vec.size() != target_vec.size()) {
+        if (output_vec.size() != target_vec.size())
+        {
             throw std::runtime_error(std::format(
                 "Evaluation Error: Output size ({}) mismatch with target size ({}) at index {}.",
                 output_vec.size(), target_vec.size(), i));
         }
-         if (target_vec.empty()){
-             std::cerr << "Warning: Empty target vector encountered during evaluation at index " << i << std::endl;
-             continue; // Skip this sample
-         }
+
+        if (target_vec.empty())
+        {
+            std::cerr << "Warning: Empty target vector encountered during evaluation at index " << i << '\n';
+            continue; // Skip this sample
+        }
 
         // --- Accuracy Calculation (for Classification) ---
         // Find predicted class: index of the maximum output value
-        auto predicted_it = std::max_element(output_vec.begin(), output_vec.end());
-        std::size_t predicted_class = std::distance(output_vec.begin(), predicted_it);
+        const auto        predicted_it    = std::max_element(output_vec.begin(), output_vec.end());
+        const std::size_t predicted_class = std::distance(output_vec.begin(), predicted_it);
 
         // Find actual class: index of the '1.0' in the one-hot target vector
-        auto actual_it = std::find(target_vec.begin(), target_vec.end(), 1.0);
-        if (actual_it != target_vec.end()) { // Ensure 1.0 was found
-            std::size_t actual_class = std::distance(target_vec.begin(), actual_it);
+        if (auto actual_it = std::ranges::find(target_vec, 1.0); actual_it != target_vec.end())
+        {
+            // Ensure 1.0 was found
 
             // Compare predicted class index with actual class index
-            if (predicted_class == actual_class) {
+            if (const std::size_t actual_class = std::distance(target_vec.begin(), actual_it);
+                predicted_class == actual_class)
+            {
                 correct_predictions++;
             }
-        } else {
-             // This indicates the target vector wasn't properly one-hot encoded.
-             std::cerr << "Warning: No '1.0' found in target vector during evaluation for sample " << i
-                       << ". Check data generation/loading." << std::endl;
+        }
+        else
+        {
+            // This indicates the target vector wasn't properly one-hot encoded.
+            std::cerr << "Warning: No '1.0' found in target vector during evaluation for sample " << i
+                    << ". Check data generation/loading." << '\n';
         }
 
-         // --- Loss Calculation ---
-         try {
-              total_loss += NeuralNetwork::compute_loss(output_vec, target_vec);
-         } catch (const std::exception& e) {
-              std::cerr << "Warning: Error computing loss for sample " << i << ": " << e.what() << std::endl;
-              // Optionally skip sample or assign max loss
-         }
+        // --- Loss Calculation ---
+        try
+        {
+            total_loss += NeuralNetwork::compute_loss(output_vec, target_vec);
+        }
+        catch (const std::exception& e)
+        {
+            std::cerr << "Warning: Error computing loss for sample " << i << ": " << e.what() << '\n';
+            // Optionally skip sample or assign max loss
+        }
     } // End loop through samples
 
     // Calculate overall average loss and accuracy
-    const double avg_loss = (num_samples == 0) ? 0.0 : total_loss / static_cast<double>(num_samples);
-    const double accuracy = (num_samples == 0) ? 0.0 : static_cast<double>(correct_predictions) / static_cast<double>(num_samples);
+    const double avg_loss = num_samples == 0 ? 0.0 : total_loss / static_cast<double>(num_samples);
+    const double accuracy = num_samples == 0
+                                ? 0.0
+                                : static_cast<double>(correct_predictions) / static_cast<double>(num_samples);
 
     // Print the evaluation results
     std::printf("--- Evaluation Results ---\n");
     std::printf(" Average Loss: %.8f\n", avg_loss);
-    std::printf(" Accuracy:     %.4f%% (%zu / %zu correct)\n",
-                accuracy * 100.0, correct_predictions, num_samples);
+    std::printf(" Accuracy:     %.4f%% (%zu / %zu correct)\n", accuracy * 100.0, correct_predictions, num_samples);
     std::printf("--------------------------\n");
     std::fflush(stdout);
+}
+
+/**
+ * @brief Implementation of the data splitting function.
+ * (See Utilities.h for detailed parameter and return value documentation)
+ */
+SplitDataResult split_data(
+    const std::vector<std::vector<double>>& all_inputs,  // Input features dataset
+    const std::vector<std::vector<double>>& all_targets, // Corresponding target outputs dataset
+    const double                            train_ratio, // Proportion for training set (0.0 to 1.0)
+    const bool                              shuffle      // Whether to shuffle before splitting
+)
+{
+    // --- Input Validation ---
+
+    // Check if input and target vectors have the same number of samples.
+    if (all_inputs.size() != all_targets.size())
+    {
+        throw std::invalid_argument(
+            "split_data Error: Input features count (" + std::to_string(all_inputs.size()) +
+            ") does not match target outputs count (" + std::to_string(all_targets.size()) + ")."
+        );
+    }
+
+    // Check if the datasets are empty.
+    if (all_inputs.empty()) // No need to check all_targets again due to the previous check
+    {
+        throw std::invalid_argument("split_data Error: Cannot split empty datasets.");
+    }
+
+    // Check if the training ratio is within the valid range (exclusive of 0 and 1).
+    // A ratio of 0 or 1 would result in one empty set, which might be undesirable.
+    if (train_ratio <= 0.0 || train_ratio >= 1.0)
+    {
+        throw std::invalid_argument(
+            "split_data Error: Training ratio must be between 0.0 and 1.0 (exclusive). Received: " +
+            std::to_string(train_ratio)
+        );
+    }
+
+    // --- Index Preparation and Shuffling ---
+
+    // Get the total number of samples in the dataset.
+    const std::size_t total_samples = all_inputs.size();
+
+    // Create a vector of indices: [0, 1, 2, ..., total_samples - 1].
+    std::vector<std::size_t> indices(total_samples);
+    std::iota(indices.begin(), indices.end(), 0); // Efficiently fills the vector with sequential numbers.
+
+    // Shuffle the indices if requested. This randomizes the order of samples
+    // before splitting, ensuring unbiased train/test sets.
+    if (shuffle)
+    {
+        // Use a random device to seed the Mersenne Twister engine for better randomness.
+        std::random_device rd;
+        // Mersenne Twister 19937 generator: a high-quality pseudo-random number generator.
+        std::mt19937 random_engine(rd());
+        // Perform the in-place shuffle on the indices vector using the random engine.
+        std::shuffle(indices.begin(), indices.end(), random_engine);
+    }
+
+    // --- Calculate Split Point ---
+
+    // Calculate the number of samples for the training set based on the ratio.
+    // Cast total_samples to double for the multiplication, then cast result back to size_t.
+    // Using std::round before casting can sometimes be slightly more robust against floating point inaccuracies,
+    // although static_cast is usually sufficient here.
+    // const auto train_count = static_cast<std::size_t>(std::round(static_cast<double>(total_samples) * train_ratio));
+    const auto train_count = static_cast<std::size_t>(static_cast<double>(total_samples) * train_ratio);
+
+    // Calculate the number of samples for the testing set.
+    // This ensures that train_count + test_count == total_samples.
+    const std::size_t test_count = total_samples - train_count;
+
+    // Basic sanity check: ensure neither set is empty after calculation (due to rounding or extreme ratios near 0/1)
+    // This check might be redundant given the train_ratio validation, but adds safety.
+    if (train_count == 0 || test_count == 0)
+    {
+        throw std::runtime_error( // Use runtime_error for unexpected internal state
+            "split_data Error: Calculated split results in an empty training or testing set. Train count: " +
+            std::to_string(train_count) + ", Test count: " + std::to_string(test_count));
+    }
+
+    // --- Data Allocation and Copying ---
+
+    // Create the DataPair objects to hold the split data.
+    DataPair train_data; // Will hold {training_inputs, training_targets}
+    DataPair test_data;  // Will hold {testing_inputs, testing_targets}
+
+    // Reserve memory in the vectors to avoid multiple reallocations during push_back,
+    // improving performance.
+    train_data.first.reserve(train_count);  // Reserve space for training inputs
+    train_data.second.reserve(train_count); // Reserve space for training targets
+    test_data.first.reserve(test_count);    // Reserve space for testing inputs
+    test_data.second.reserve(test_count);   // Reserve space for testing targets
+
+    // Populate the training data vectors using the first 'train_count' shuffled indices.
+    for (std::size_t i = 0; i < train_count; i++)
+    {
+        // Get the original index of the sample from the shuffled indices vector.
+        const std::size_t original_index = indices[i];
+        // Add the corresponding input sample to the training inputs vector.
+        train_data.first.push_back(all_inputs[original_index]);
+        // Add the corresponding target sample to the training targets vector.
+        train_data.second.push_back(all_targets[original_index]);
+    }
+
+    // Populate the testing data vectors using the remaining shuffled indices.
+    for (std::size_t i = train_count; i < total_samples; i++)
+    {
+        // Get the original index of the sample from the shuffled indices vector.
+        const std::size_t original_index = indices[i];
+        // Add the corresponding input sample to the testing inputs vector.
+        test_data.first.push_back(all_inputs[original_index]);
+        // Add the corresponding target sample to the testing targets vector.
+        test_data.second.push_back(all_targets[original_index]);
+    }
+
+    // --- Return Result ---
+
+    // Return the final result as a pair containing the training DataPair and the testing DataPair.
+    // This structure { {train_in, train_out}, {test_in, test_out} } matches the SplitDataResult type.
+    return {train_data, test_data};
+}
+
+/**
+ * @brief Implementation of the function to display sample data points.
+ * (See Utilities.h for detailed parameter and purpose documentation)
+ */
+void display_sample_data(
+    const std::string&                      title,   // Title for the output block
+    const std::vector<std::vector<double>>& inputs,  // Input dataset
+    const std::vector<std::vector<double>>& targets, // Target dataset
+    const std::size_t                       count)   // Max number of samples to show
+{
+    // --- Print Title ---
+    // Provides context for the printed data block.
+    std::cout << "\n--- " << title << " ---" << '\n';
+
+    // --- Basic Input Validation ---
+
+    // Check if the requested display count is zero.
+    if (count == 0)
+    {
+        std::cout << "Display count is zero. No samples will be shown." << '\n';
+        std::cout << "--- End of Sample Data ---" << '\n';
+        return; // Nothing more to do.
+    }
+
+    // Check if input data container is empty.
+    if (inputs.empty())
+    {
+        std::cout << "Input data is empty. Nothing to display." << '\n';
+        std::cout << "--- End of Sample Data ---" << '\n';
+        return;
+    }
+
+    // Check if target data container is empty.
+    if (targets.empty())
+    {
+        std::cout << "Target data is empty. Nothing to display." << '\n';
+        std::cout << "--- End of Sample Data ---" << '\n';
+        return;
+    }
+
+    // Check if the number of input samples matches the number of target samples.
+    // This is crucial for displaying meaningful input-target pairs.
+    if (inputs.size() != targets.size())
+    {
+        // Output a warning if sizes mismatch, as pairs cannot be reliably formed.
+        std::cout << "[Warning] display_sample_data: Input size (" << inputs.size()
+                << ") and Target size (" << targets.size()
+                << ") mismatch. Cannot display pairs reliably." << '\n';
+        std::cout << "--- End of Sample Data ---" << '\n';
+        // It's safer to return here than to potentially access out-of-bounds data
+        // or display misleading pairs.
+        return;
+    }
+
+    // --- Determine Actual Number of Samples to Display ---
+    // We can only display up to 'count' samples, or fewer if the dataset size is smaller.
+    const std::size_t num_samples_to_display = std::min(count, inputs.size());
+
+    // Inform the user how many samples are actually being shown.
+    std::cout << "Displaying first " << num_samples_to_display
+            << " of " << inputs.size() << " total samples:" << '\n';
+
+    // --- Set Output Formatting ---
+    // Use fixed-point notation with a specific precision for consistent alignment
+    // and readability of floating-point numbers.
+    std::cout << std::fixed << std::setprecision(4); // Example: 4 decimal places
+
+    // --- Iterate and Print Samples ---
+    // Loop through the determined number of samples.
+    for (std::size_t i = 0; i < num_samples_to_display; i++)
+    {
+        // Print a header for each individual sample.
+        std::cout << "--- Sample " << i + 1 << " ---" << '\n';
+
+        // --- Display Input Vector ---
+        std::cout << "  Input:  [";
+        // Check if the specific input sample vector is not empty.
+        if (!inputs[i].empty())
+        {
+            // Iterate through the features (doubles) within the input sample vector.
+            for (std::size_t j = 0; j < inputs[i].size(); j++)
+            {
+                // Print the feature value.
+                std::cout << inputs[i][j];
+                // Print a comma and space unless it's the last element.
+                if (j < inputs[i].size() - 1)
+                {
+                    std::cout << ", ";
+                }
+            }
+        }
+        else
+        {
+            // Indicate if a specific input sample vector is empty.
+            std::cout << "(empty)";
+        }
+        std::cout << "]" << '\n'; // Close bracket and add newline
+
+        // --- Display Target Vector ---
+        std::cout << "  Target: [";
+        // Check if the specific target sample vector is not empty.
+        if (!targets[i].empty())
+        {
+            // Iterate through the values within the target sample vector.
+            for (std::size_t j = 0; j < targets[i].size(); j++)
+            {
+                // Print the target value.
+                std::cout << targets[i][j];
+                // Print a comma and space unless it's the last element.
+                if (j < targets[i].size() - 1)
+                {
+                    std::cout << ", ";
+                }
+            }
+        }
+        else
+        {
+            // Indicate if a specific target sample vector is empty.
+            std::cout << "(empty)";
+        }
+
+        std::cout << "]" << '\n'; // Close bracket and add newline
+    }
+
+    // --- Reset Output Formatting (Good Practice) ---
+    // Reset the iostream flags to their default state to avoid affecting
+    // subsequent output operations elsewhere in the program.
+    std::cout.unsetf(std::ios_base::floatfield); // Remove fixed/scientific flag
+    std::cout << std::setprecision(6);           // Reset precision (default is often 6)
+
+    // --- Print Footer ---
+    std::cout << "--- End of Sample Data ---" << '\n';
 }

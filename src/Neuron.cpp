@@ -1,19 +1,34 @@
+//
+// Created by MattFor on 12.04.2025.
+//
+
 // Neuron.cpp
 // Implementation file for the Neuron class.
 
-#include "../include/Neuron.h" // Use quotes for local includes
+#include <random>
+#include <algorithm>
+#include <execution>
+
+#include "../include/Neuron.h"
 
 // Constructor
-Neuron::Neuron(const std::size_t num_inputs, const double weight_init_min, const double weight_init_max)
-    : bias(0.0), // Initialize bias
-      weights(num_inputs), // Allocate space for weights
+Neuron::Neuron(
+    const std::size_t    num_inputs,
+    const ActivationType activation,
+    const double         weight_init_min,
+    const double         weight_init_max
+)
+    : bias(0.0),
       output(0.0),
-      gradient(0.0)
+      gradient(0.0),
+      last_net_input(0.0),
+      weights(num_inputs),
+      activation_type(activation)
 {
     // Random initialization
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution<double> dis(weight_init_min, weight_init_max);
+    std::random_device             rd;
+    std::mt19937                   gen(rd());
+    std::uniform_real_distribution dis(weight_init_min, weight_init_max);
 
     // Initialize weights randomly
     for (double& weight : this->weights)
@@ -25,59 +40,66 @@ Neuron::Neuron(const std::size_t num_inputs, const double weight_init_min, const
     this->bias = dis(gen);
 }
 
-// Sigmoid activation function
-double Neuron::sigmoid(const double x) noexcept
-{
-    // Clamp input to prevent overflow/underflow in std::exp
-    const double clamped_x = std::clamp(x, -MAX_SIGMOID_INPUT, MAX_SIGMOID_INPUT);
-    return 1.0 / (1.0 + std::exp(-clamped_x));
-}
-
-// Derivative of the sigmoid function
-double Neuron::sigmoid_derivative(const double sigmoid_output) noexcept
-{
-    // derivative = sigmoid(x) * (1 - sigmoid(x))
-    return sigmoid_output * (1.0 - sigmoid_output);
-}
-
 // Calculate neuron's output
 double Neuron::activate(const std::vector<double>& inputs)
 {
-    if (inputs.size() != this->weights.size()) {
+    // --- Input Validation ---
+    if (inputs.size() != this->weights.size())
+    {
         throw std::invalid_argument(std::format(
             "Neuron::activate: Input size ({}) does not match neuron's weight count ({}).",
             inputs.size(), this->weights.size()));
     }
 
-    // Calculate weighted sum: sum(inputs[i] * weights[i])
-    // Using std::transform_reduce for potential parallelization/vectorization
+    // --- Calculate Net Input (Weighted Sum + Bias) ---
+    // Using std::transform_reduce for potential efficiency gains (vectorization/parallelism).
+    // Calculates: sum(inputs[i] * weights[i]) for all i.
     const double weighted_sum = std::transform_reduce(
-        std::execution::unseq, // Allow unsequenced execution (potential vectorization)
+        // std::execution::unseq allows vectorization/unsequenced execution on a single thread.
+        // std::execution::par_unseq could be used for potential multi-threading if beneficial and safe.
+        std::execution::unseq,
         inputs.begin(),
         inputs.end(),
         this->weights.begin(),
-        0.0 // Initial sum
+        0.0 // Initial value for the sum
     );
 
-    // Add bias and apply activation function
-    this->output = sigmoid(weighted_sum + this->bias);
+    // Store the net input (weighted sum + bias). This is needed for derivatives
+    // like ReLU and LeakyReLU that depend on the input value.
+    this->last_net_input = weighted_sum + this->bias;
+
+    // --- Apply Activation Function ---
+    // Call the helper function which uses a switch based on this->activation_type
+    // to apply the correct activation (Sigmoid, ReLU, LeakyReLU, Tanh).
+    this->output = apply_activation(this->last_net_input); // <-- ADJUSTED LINE
+
+    // Return the calculated activation value.
     return this->output;
 }
 
 // Compute gradient for an output layer neuron
 void Neuron::compute_output_gradient(const double target)
 {
-    // Gradient (delta) for output neuron = (target - output) * f'(net)
-    // where f'(net) is sigmoid_derivative(output)
+    // Calculate the error signal (derivative of loss w.r.t. activation 'output')
+    // Assumes MSE loss derivative for simplicity, replace if using a different loss.
+    // For Cross-Entropy with Sigmoid/Softmax output, this part might change slightly
+    // or be handled differently (e.g., Softmax gradient is just output - target).
+    // Let's assume (target - output) is the correct error signal w.r.t activation 'output'.
     const double error = target - this->output;
-    this->gradient = error * sigmoid_derivative(this->output);
+
+    // Gradient (delta) = error * f'(net_input)
+    // Call the helper function apply_derivative() which selects the correct
+    // derivative (Sigmoid, ReLU, LeakyReLU, Tanh) based on this->activation_type
+    // and uses the appropriate value (this->output or this->last_net_input).
+    this->gradient = error * apply_derivative(); // <-- ADJUSTED LINE
 }
 
 
 // Update weights and bias
 void Neuron::update_weights(const std::vector<double>& prev_layer_outputs, const double learning_rate)
 {
-     if (prev_layer_outputs.size() != this->weights.size()) {
+    if (prev_layer_outputs.size() != this->weights.size())
+    {
         throw std::invalid_argument(std::format(
             "Neuron::update_weights: Previous layer output size ({}) does not match neuron's weight count ({}).",
             prev_layer_outputs.size(), this->weights.size()));
@@ -91,7 +113,9 @@ void Neuron::update_weights(const std::vector<double>& prev_layer_outputs, const
         this->weights.end(),
         prev_layer_outputs.begin(),
         this->weights.begin(), // Write back to weights
-        [learning_rate, grad = this->gradient](double w, double prev_output) { // Capture gradient by value
+        [learning_rate, grad = this->gradient](const double w, const double prev_output)
+        {
+            // Capture gradient by value
             return w + learning_rate * grad * prev_output;
         }
     );
@@ -101,5 +125,140 @@ void Neuron::update_weights(const std::vector<double>& prev_layer_outputs, const
     this->bias += learning_rate * this->gradient; // * 1.0
 }
 
-// Note: The template function Neuron::compute_hidden_gradient is implemented in the header file (Neuron.h)
-// because it's a template.
+// --- Activation Function Implementations ---
+
+double Neuron::activation_sigmoid(const double x) noexcept
+{
+    const double clamped_x = std::clamp(x, -MAX_EXP_INPUT, MAX_EXP_INPUT);
+    return 1.0 / (1.0 + std::exp(-clamped_x));
+}
+
+double Neuron::activation_relu(const double x) noexcept
+{
+    return std::max(0.0, x);
+}
+
+// Added LeakyReLU Activation
+double Neuron::activation_leaky_relu(const double x) noexcept
+{
+    return x > 0.0 ? x : LRELU_ALPHA * x;
+    // Equivalent: return std::max(LRELU_ALPHA * x, x); but branch might be faster
+}
+
+double Neuron::activation_tanh(const double x) noexcept
+{
+    const double result = std::tanh(x);
+    return std::clamp(result, -MAX_TANH_OUTPUT, MAX_TANH_OUTPUT);
+}
+
+
+// --- Activation Derivative Implementations ---
+
+double Neuron::derivative_sigmoid(const double sigmoid_output) noexcept
+{
+    return sigmoid_output * (1.0 - sigmoid_output);
+}
+
+double Neuron::derivative_relu(const double net_input) noexcept
+{
+    return net_input > 0.0 ? 1.0 : 0.0;
+}
+
+// Added LeakyReLU Derivative
+double Neuron::derivative_leaky_relu(const double net_input) noexcept
+{
+    return net_input > 0.0 ? 1.0 : LRELU_ALPHA;
+}
+
+double Neuron::derivative_tanh(const double tanh_output) noexcept
+{
+    return 1.0 - tanh_output * tanh_output;
+}
+
+double Neuron::apply_activation(const double net_input) const noexcept
+{
+    switch (this->activation_type)
+    {
+        case ActivationType::SIGMOID:
+        {
+            return activation_sigmoid(net_input);
+        }
+        case ActivationType::RELU:
+        {
+            return activation_relu(net_input);
+        }
+        case ActivationType::LEAKY_RELU:
+        {
+            return activation_leaky_relu(net_input);
+        }
+        case ActivationType::TANH:
+        {
+            return activation_tanh(net_input);
+        }
+        default:
+        {
+            return 0.0; // Impossible
+        }
+    }
+}
+
+double Neuron::apply_derivative() const noexcept
+{
+    switch (this->activation_type)
+    {
+        case ActivationType::SIGMOID:
+        {
+            return derivative_sigmoid(this->output);
+        }
+        case ActivationType::RELU:
+        {
+            return derivative_relu(this->last_net_input);
+        }
+        case ActivationType::LEAKY_RELU:
+        {
+            return derivative_leaky_relu(this->last_net_input);
+        }
+        case ActivationType::TANH:
+        {
+            return derivative_tanh(this->output);
+        }
+        default:
+        {
+            return 0.0; // Impossible
+        }
+    }
+}
+
+
+// --- Getters ---
+
+/** @brief Gets the last calculated output value. */
+[[nodiscard]] double Neuron::get_output() const noexcept
+{
+    return this->output;
+}
+
+/** @brief Gets the calculated gradient (delta). */
+[[nodiscard]] double Neuron::get_gradient() const noexcept
+{
+    return this->gradient;
+}
+
+/** @brief Gets the bias value. */
+[[nodiscard]] double Neuron::get_bias() const noexcept
+{
+    return this->bias;
+}
+
+/** @brief Gets the vector of input weights. */
+[[nodiscard]] const std::vector<double>& Neuron::get_weights() const noexcept
+{
+    return this->weights;
+}
+
+// --- Setters ---
+
+void Neuron::set_gradient(const double new_gradient) noexcept
+{
+    this->gradient = new_gradient;
+}

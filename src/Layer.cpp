@@ -1,3 +1,7 @@
+//
+// Created by MattFor on 12.04.2025.
+//
+
 // Layer.cpp
 // Implementation file for the Layer class.
 
@@ -5,26 +9,38 @@
 #include "../include/Neuron.h" // Ensure Neuron definition is available
 
 #include <vector>
-#include <numeric>   // For std::iota (used via ranges)
 #include <ranges>    // For std::views::iota
+#include <format>    // For error messages (requires C++20)
+#include <numeric>   // For std::iota (used via ranges)
 #include <algorithm> // For std::transform, std::for_each, std::clamp
 #include <execution> // For std::execution::unseq
 #include <stdexcept> // For std::invalid_argument, std::out_of_range
-#include <format>    // For error messages (requires C++20)
 
 // Constructor implementation
-Layer::Layer(const std::size_t num_neurons,
-             const std::size_t num_inputs_per_neuron,
-             const double      weight_init_min,
-             const double      weight_init_max)
-    : outputs(num_neurons, 0.0) // Pre-allocate outputs vector
+Layer::Layer(
+    const std::size_t num_neurons,
+    std::size_t       num_inputs_per_neuron,
+    ActivationType    activation,
+    double            weight_init_min,
+    double            weight_init_max)
+    : outputs(num_neurons),
+      layer_activation_type(activation)
 {
-    neurons.reserve(num_neurons); // Reserve space for efficiency
+    this->neurons.reserve(num_neurons);
+
     for (std::size_t i = 0; i < num_neurons; ++i)
     {
-        // Call the corrected Neuron constructor
-        neurons.emplace_back(num_inputs_per_neuron, weight_init_min, weight_init_max);
+        // Pass activation type and weight init params to Neuron constructor
+        this->neurons.emplace_back(num_inputs_per_neuron, activation, weight_init_min, weight_init_max);
     }
+}
+
+/**
+ * @brief Gets the activation function type used by neurons in this layer.
+ */
+ActivationType Layer::get_activation_type() const noexcept
+{
+    return this->layer_activation_type;
 }
 
 // Feed-forward implementation
@@ -32,16 +48,16 @@ Layer::Layer(const std::size_t num_neurons,
 const std::vector<double>& Layer::feed_forward(std::span<const double> inputs)
 {
     // Input validation (optional but recommended)
-    if (!neurons.empty() && inputs.size() != neurons[0].get_weights().size())
+    if (!this->neurons.empty() && inputs.size() != neurons[0].get_weights().size())
     {
         throw std::invalid_argument(std::format(
             "Layer::feed_forward: Input size ({}) does not match expected number of inputs per neuron ({}).",
-            inputs.size(), neurons[0].get_weights().size()));
+            inputs.size(), this->neurons[0].get_weights().size()));
     }
 
     // Convert span to vector ONCE for Neuron::activate compatibility/efficiency
     // (Neuron::activate expects std::vector<double>)
-    const std::vector<double> inputs_vec(inputs.begin(), inputs.end());
+    const std::vector inputs_vec(inputs.begin(), inputs.end());
 
     // Compute outputs for each neuron in parallel.
     // Output iterator writes directly into the pre-allocated this->outputs vector.
@@ -67,26 +83,31 @@ void Layer::backpropagate(
     std::span<const double> error_signals,      // Targets (output layer) or ignored (hidden)
     std::span<const double> prev_layer_outputs, // Outputs from previous layer
     double                  learning_rate,
-    const Layer*            next_layer_ptr) // Pointer to the *next* layer (or nullptr if output)
+    const Layer*            next_layer_ptr,               // Pointer to the *next* layer (or nullptr if output)
+    double                  gradient_clip_threshold = 0.0 // Default is 0.0 (no clipping)
+)
 {
     const std::size_t num_neurons = this->neurons.size();
-    if (num_neurons == 0) { return; } // Nothing to do
+    if (num_neurons == 0)
+    {
+        return;
+    }
 
     // Input validation (optional but recommended)
-    const std::size_t num_inputs_per_neuron = this->neurons[0].get_weights().size();
-    if (prev_layer_outputs.size() != num_inputs_per_neuron)
+    if (const std::size_t num_inputs_per_neuron = this->neurons[0].get_weights().size();
+        prev_layer_outputs.size() != num_inputs_per_neuron)
     {
         throw std::invalid_argument(std::format(
             "Layer::backpropagate: Previous layer output size ({}) does not match expected number of inputs per neuron ({}).",
             prev_layer_outputs.size(), num_inputs_per_neuron));
     }
+
     if (next_layer_ptr == nullptr && error_signals.size() != num_neurons)
     {
         throw std::out_of_range(std::format(
             "Layer::backpropagate: Output layer error signals size ({}) does not match neuron count ({}).",
             error_signals.size(), num_neurons));
     }
-
 
     // --- 1. Compute Gradients (Deltas) for each neuron in this layer ---
     // Use std::views::iota for indices needed by compute_hidden_gradient
@@ -113,32 +134,34 @@ void Layer::backpropagate(
             }
         }); // End gradient computation loop
 
-    // --- 1.5 (Optional) Apply Gradient Clipping ---
-    // If gradient clipping is desired, uncomment and ensure Neuron has set_gradient.
+    // --- 1.5 Apply Gradient Clipping (if enabled) ---
+    // This clips the *delta* (gradient of the error w.r.t. the neuron's net input)
+    // for each neuron individually.
+    if (gradient_clip_threshold > 0.0)
+    {
+        std::for_each(
+            std::execution::par_unseq, // Can be parallel
+            this->neurons.begin(),
+            this->neurons.end(),
+            [gradient_clip_threshold](Neuron& neuron)
+            {
+                // Assumes Neuron class has get_gradient() and set_gradient() methods
+                // Clamps the gradient value between [-threshold, +threshold]
+                const double clipped_gradient = std::clamp(
+                    neuron.get_gradient(),
+                    -gradient_clip_threshold, // Lower bound
+                    gradient_clip_threshold   // Upper bound
+                );
 
-    // constexpr double GRADIENT_CLIP_THRESHOLD = 1.0; // Example threshold
-    // if constexpr (GRADIENT_CLIP_THRESHOLD > 0) // Compile-time check if clipping enabled
-    // {
-    //      std::for_each(
-    //         std::execution::unseq,
-    //         this->neurons.begin(),
-    //         this->neurons.end(),
-    //         [](Neuron& neuron) {
-    //              // Assumes Neuron class has set_gradient method
-    //              const double clipped_gradient = std::clamp(
-    //                  neuron.get_gradient(),
-    //                 -GRADIENT_CLIP_THRESHOLD,
-    //                  GRADIENT_CLIP_THRESHOLD
-    //              );
-    //              neuron.set_gradient(clipped_gradient);
-    //         }
-    //      );
-    // }
+                neuron.set_gradient(clipped_gradient); // Update the neuron's stored gradient
+            }
+        );
+    }
     // --- End Gradient Clipping ---
 
     // --- 2. Update Weights using computed (and possibly clipped) gradients ---
     // Convert span to vector once for neuron.update_weights
-    const std::vector<double> prev_outputs_vec(prev_layer_outputs.begin(), prev_layer_outputs.end());
+    const std::vector prev_outputs_vec(prev_layer_outputs.begin(), prev_layer_outputs.end());
 
     std::for_each(
         std::execution::unseq, // Potential parallelism
@@ -149,7 +172,8 @@ void Layer::backpropagate(
         [learning_rate, &prev_outputs_vec](Neuron& neuron)
         {
             neuron.update_weights(prev_outputs_vec, learning_rate);
-        }); // End weight update loop
+        }
+    ); // End weight update loop
 }
 
 // Getters implementation
@@ -168,7 +192,6 @@ std::vector<Neuron>& Layer::get_neurons_mut() noexcept
 {
     return this->neurons;
 }
-
 
 std::size_t Layer::size() const noexcept
 {
