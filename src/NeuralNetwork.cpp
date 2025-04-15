@@ -25,6 +25,217 @@
 #include <stdexcept> // For std::runtime_error, std::invalid_argument
 #include <bits/random.h>
 
+/**
+ * @brief Estimates the total number of trainable parameters (weights + biases) in a network topology.
+ * @param layer_sizes Vector representing the number of neurons in each layer (input, hidden(s), output).
+ * @return Estimated total number of parameters.
+ */
+std::size_t estimate_parameters(const std::vector<std::size_t>& layer_sizes)
+{
+    if (layer_sizes.size() < 2)
+    {
+        return 0; // Need at least input and output layer
+    }
+
+    std::size_t total_params = 0;
+    for (size_t i = 1; i < layer_sizes.size(); i++)
+    {
+        const std::size_t weights = layer_sizes[i - 1] * layer_sizes[i];
+        const std::size_t biases  = layer_sizes[i]; // One bias per neuron in the current layer
+        total_params += weights + biases;
+    }
+
+    return total_params;
+}
+
+std::vector<std::size_t> NeuralNetwork::generate_layer_topology(
+    const std::size_t       num_input_features,
+    std::size_t             num_output_neurons,
+    const std::size_t       num_training_samples,
+    const NetworkComplexity complexity_level = NetworkComplexity::MEDIUM
+)
+{
+    if (num_input_features == 0 || num_output_neurons == 0)
+    {
+        throw std::invalid_argument("Input and output feature counts must be greater than zero.");
+    }
+
+    std::vector<std::size_t> layer_sizes;
+    layer_sizes.push_back(num_input_features); // Start with input layer
+
+    // --- Heuristics ---
+
+    // 1. Determine Number of Hidden Layers based on Complexity
+    int num_hidden_layers = 0;
+    switch (complexity_level)
+    {
+        case NetworkComplexity::SIMPLE:
+        {
+            num_hidden_layers = 1;
+        }
+        break;
+
+        case NetworkComplexity::MEDIUM:
+        {
+            num_hidden_layers = 2;
+        }
+        break;
+
+        case NetworkComplexity::COMPLEX:
+        {
+            num_hidden_layers = 3;
+        }
+        break; // Could be 2 or 3
+
+        default:
+        {
+            num_hidden_layers = 2;
+        }
+        break;
+    }
+
+    // Very simple cases might only need 1 layer regardless of complexity setting
+    if (num_input_features <= 10 && num_output_neurons <= 5)
+    {
+        if (complexity_level == NetworkComplexity::SIMPLE)
+        {
+            num_hidden_layers = 1;
+        }
+        else
+        {
+            num_hidden_layers = std::min(num_hidden_layers, 2); // Cap at 2 for simple I/O
+        }
+    }
+
+
+    // 2. Determine Sizes of Hidden Layers
+    // Base size heuristic - often between input and output size.
+    // Using geometric mean sqrt(input * output) is one option, average is another.
+    // Let's try a blend, leaning towards input size but capped.
+    double base_hidden_size = std::sqrt(
+        static_cast<double>(num_input_features) * static_cast<double>(num_output_neurons));
+    base_hidden_size = std::max({base_hidden_size, static_cast<double>(num_output_neurons * 2), 16.0});
+    // Ensure it's reasonably large, >= 2*output, min 16
+    base_hidden_size = std::min(base_hidden_size, static_cast<double>(num_input_features * 2)); // Cap at 2*input
+
+    // Adjust base size by complexity
+    double complexity_scale = 1.0;
+    switch (complexity_level)
+    {
+        case NetworkComplexity::SIMPLE:
+        {
+            complexity_scale = 0.6;
+        }
+        break; // Smaller for simple
+
+        case NetworkComplexity::MEDIUM:
+        {
+            complexity_scale = 1.0;
+        }
+        break;
+
+        case NetworkComplexity::COMPLEX:
+        {
+            complexity_scale = 1.5;
+        }
+        break; // Larger for complex
+    }
+
+    // If input/output are very different, adjust scale slightly
+    if (const double io_ratio = static_cast<double>(num_input_features) / static_cast<double>(num_output_neurons);
+        io_ratio > 10.0)
+    {
+        complexity_scale *= 1.1; // More capacity if reducing dimension significantly
+    }
+    else if (io_ratio < 0.1)
+    {
+        complexity_scale *= 0.9; // Less capacity if expanding dimension significantly
+    }
+
+
+    // Adjust base size *mildly* by data amount (avoid overfitting small data)
+    // Using logarithmic scale or broad categories is better than linear.
+    double data_amount_scale = 1.0;
+    if (num_training_samples > 0)
+    {
+        // Avoid division by zero or log(0)
+        if (num_training_samples < 1000)
+        {
+            data_amount_scale = 0.7; // Significantly reduce size for very small data
+        }
+        else if (num_training_samples < 10000)
+        {
+            data_amount_scale = 0.9; // Slightly reduce for small-medium data
+        }
+        else if (num_training_samples > 100000)
+        {
+            data_amount_scale = 1.2; // Slightly increase for large data
+        }
+        // Could use log10: data_amount_scale = 0.5 + 0.1 * std::log10(static_cast<double>(num_training_samples));
+        // Needs clamping/tuning
+    }
+
+
+    // Calculate final size for the first hidden layer
+    auto current_hidden_size = static_cast<std::size_t>(
+        base_hidden_size * complexity_scale * data_amount_scale
+    );
+
+    // Ensure minimum hidden size
+    current_hidden_size = std::max({current_hidden_size, static_cast<std::size_t>(8), num_output_neurons});
+
+
+    // 3. Generate Hidden Layer Sizes (Pyramid/Funnel structure is common)
+    double decay_factor = std::pow(static_cast<double>(num_output_neurons) / static_cast<double>(current_hidden_size),
+                                   1.0 / num_hidden_layers);
+    decay_factor = std::max(0.5, std::min(1.0, decay_factor)); // Keep decay reasonable (0.5 to 1.0)
+
+
+    for (int i = 0; i < num_hidden_layers; i++)
+    {
+        // Ensure size doesn't drop below output size or a minimum threshold
+        current_hidden_size = std::max({static_cast<std::size_t>(8), num_output_neurons, current_hidden_size});
+        layer_sizes.push_back(current_hidden_size);
+
+        // Decay size for the next layer (if not the last hidden layer)
+        if (i < num_hidden_layers - 1)
+        {
+            // Option 1: Geometric Decay
+            current_hidden_size = static_cast<std::size_t>(static_cast<double>(current_hidden_size) * decay_factor);
+
+            // Option 2: Simpler Halving (can be too aggressive)
+            // current_hidden_size /= 2;
+        }
+    }
+
+    // --- Final Checks ---
+    // Ensure last hidden layer isn't smaller than output (redundant due to loop check, but safe)
+    if (layer_sizes.back() < num_output_neurons && layer_sizes.size() > 1)
+    {
+        layer_sizes.back() = std::max(num_output_neurons, static_cast<size_t>(8));
+    }
+
+    layer_sizes.push_back(num_output_neurons); // Add output layer
+
+    // Optional: Parameter Count Check (Warning if parameters >> samples)
+    if (const std::size_t estimated_param_count = estimate_parameters(layer_sizes);
+        num_training_samples > 0 && estimated_param_count > num_training_samples * 5 && complexity_level !=
+        NetworkComplexity::COMPLEX)
+    {
+        // Scaling factor 5 is arbitrary - adjust as needed
+        std::cout << "Warning: Generated topology has approx. " << estimated_param_count
+                << " parameters, which might be high for " << num_training_samples
+                << " training samples. Consider using NetworkComplexity::SIMPLE or more data.\n";
+        // Could potentially auto-adjust here, but it gets complicated. Let's just warn.
+    }
+    else if (estimated_param_count > 0)
+    {
+        std::cout << "Info: Generated topology has approx. " << estimated_param_count << " parameters.\n";
+    }
+
+    return layer_sizes;
+}
+
 void NeuralNetwork::display_topology() const
 {
     std::cout << "\n--- Neural Network Topology ---\n\n";
@@ -311,7 +522,7 @@ void NeuralNetwork::train(
     // Initialize it with 0, 1, 2, ..., total_samples - 1
     std::iota(indices.begin(), indices.end(), 0);
 
-    for (std::size_t epoch = 0; epoch < epochs; ++epoch)
+    for (std::size_t epoch = 0; epoch < epochs; epoch++)
     {
         auto        epoch_start                = std::chrono::high_resolution_clock::now();
         double      epoch_total_loss           = 0.0;
@@ -394,7 +605,7 @@ void NeuralNetwork::train(
 // Loading and saving weights to binary file
 void NeuralNetwork::save_weights(const std::string& filename) const
 {
-    std::ofstream file(filename, std::ios::binary);
+    std::ofstream file("../nn_data/" + filename, std::ios::binary);
     if (!file.is_open())
     {
         throw std::runtime_error(std::format("Could not open file for saving weights: {}", filename));
@@ -429,7 +640,7 @@ void NeuralNetwork::save_weights(const std::string& filename) const
 
 bool NeuralNetwork::load_weights(const std::string& filename)
 {
-    std::ifstream file(filename, std::ios::binary);
+    std::ifstream file("../nn_data/" + filename, std::ios::binary);
     if (!file.is_open())
     {
         std::cerr << format("Could not open file for loading weights: {}", filename) << '\n';
@@ -458,7 +669,7 @@ bool NeuralNetwork::load_weights(const std::string& filename)
         return false;
     }
 
-    for (size_t i = 0; i < num_layers; ++i)
+    for (size_t i = 0; i < num_layers; i++)
     {
         ActivationType loaded_activation;
         size_t         num_neurons;
@@ -480,7 +691,7 @@ bool NeuralNetwork::load_weights(const std::string& filename)
             return false;
         }
 
-        for (size_t j = 0; j < num_neurons; ++j)
+        for (size_t j = 0; j < num_neurons; j++)
         {
             double bias;
             size_t num_weights;
@@ -499,17 +710,50 @@ bool NeuralNetwork::load_weights(const std::string& filename)
                 return false;
             }
 
-            if (!file.read(reinterpret_cast<char*>(this->layers[i].get_neurons()[j].get_weights().data()),
-                           num_weights * sizeof(double)))
+            // Get non-const pointer (using your new _mut functions)
+            double* weights_data_ptr = this->layers[i].get_neurons_mut()[j].get_weights_mut().data();
+
+            // Calculate the total number of bytes needed as an unsigned type first
+            const size_t total_bytes_unsigned = num_weights * sizeof(double);
+
+            // Perform the read using the safely cast size
+            if (const auto bytes_to_read = static_cast<std::streamsize>(total_bytes_unsigned); !file.read(
+                reinterpret_cast<char*>(weights_data_ptr), bytes_to_read))
             {
-                std::cerr << std::format("Error reading weights for neuron {} in layer {} from file.", j, i) <<
-                        '\n';
+                // Your error handling using std::format (or fallback)
+                // std::cerr << std::format("Error reading weights for neuron {} in layer {} from file.", j, i) << '\n';
+                std::cerr << "Error reading weights for neuron " << j << " in layer " << i << " from file." << '\n';
                 return false;
             }
 
-            this->layers[i].get_neurons()[j].set_bias(bias);
+            this->layers[i].get_neurons_mut()[j].set_bias(bias);
         }
     }
 
     return true;
+}
+
+[[nodiscard]] std::size_t NeuralNetwork::get_input_size() const noexcept
+{
+    return this->input_size;
+}
+
+[[nodiscard]] std::size_t NeuralNetwork::get_output_size() const noexcept
+{
+    return this->output_size;
+}
+
+[[nodiscard]] const std::vector<Layer>& NeuralNetwork::get_layers() const noexcept
+{
+    return this->layers;
+}
+
+[[nodiscard]] std::vector<Layer>& NeuralNetwork::get_layers_mut() noexcept
+{
+    return this->layers;
+}
+
+[[nodiscard]] const std::vector<std::size_t>& NeuralNetwork::get_layer_sizes() const noexcept
+{
+    return this->layer_sizes;
 }

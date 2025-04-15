@@ -7,7 +7,7 @@
 
 inline std::pair<std::vector<std::vector<double>>, std::vector<std::vector<double>>> process_car()
 {
-    std::ifstream file("../data/car/car.data");
+    std::ifstream file("../datasets/car/car.data");
     if (!file.is_open())
     {
         throw std::runtime_error("Could not open file car.data");

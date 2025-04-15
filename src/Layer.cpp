@@ -28,7 +28,7 @@ Layer::Layer(
 {
     this->neurons.reserve(num_neurons);
 
-    for (std::size_t i = 0; i < num_neurons; ++i)
+    for (std::size_t i = 0; i < num_neurons; i++)
     {
         // Pass activation type and weight init params to Neuron constructor
         this->neurons.emplace_back(num_inputs_per_neuron, activation, weight_init_min, weight_init_max);

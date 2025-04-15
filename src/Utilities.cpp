@@ -316,10 +316,10 @@ SplitDataResult split_data(
         );
     }
 
-    // Check if the datasets are empty.
+    // Check if the data are empty.
     if (all_inputs.empty()) // No need to check all_targets again due to the previous check
     {
-        throw std::invalid_argument("split_data Error: Cannot split empty datasets.");
+        throw std::invalid_argument("split_data Error: Cannot split empty data.");
     }
 
     // Check if the training ratio is within the valid range (exclusive of 0 and 1).

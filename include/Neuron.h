@@ -221,10 +221,16 @@ public:
     /** @brief Gets the vector of input weights. */
     [[nodiscard]] const std::vector<double>& get_weights() const noexcept;
 
+    /** @brief Gets the vector of input weights. Non-const for setting and loading weights. */
+    [[nodiscard]] std::vector<double>& get_weights_mut() noexcept;
+
     // --- Setters ---
 
     /** @brief For clipping the gradient. */
     void set_gradient(double new_gradient) noexcept;
+
+    /** @brief For setting the gradient mutably during binary file loading. */
+    void set_bias(double new_bias) noexcept;
 };
 
 /**

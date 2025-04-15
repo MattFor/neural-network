@@ -17,6 +17,13 @@
 
 #include "Layer.h"
 
+enum class NetworkComplexity
+{
+    SIMPLE, // Fewer layers/neurons, potentially faster training, prone to underfitting complex data
+    MEDIUM, // Balanced approach, good starting point
+    COMPLEX // More layers/neurons, potentially higher capacity, slower training, prone to overfitting small data
+};
+
 /**
  * @brief Represents a feedforward neural network.
  *
@@ -25,9 +32,10 @@
  */
 class NeuralNetwork
 {
-    std::size_t        input_size{};  ///< Number of input features expected by the network.
-    std::size_t        output_size{}; ///< Number of output neurons in the final layer.
-    std::vector<Layer> layers;        ///< The sequence of layers composing the network.
+    std::size_t              input_size{};  ///< Number of input features expected by the network.
+    std::size_t              output_size{}; ///< Number of output neurons in the final layer.
+    std::vector<Layer>       layers;        ///< The sequence of layers composing the network.
+    std::vector<std::size_t> layer_sizes;   ///< Stores the size of each layer.
 
 public:
     NeuralNetwork() = default;
@@ -48,7 +56,7 @@ public:
         const ActivationType            output_activation, // Added parameter
         double                          weight_init_min = -0.5,
         double                          weight_init_max = 0.5
-    )
+    ) : layer_sizes(layer_sizes) // For use in saving to binary files.
     {
         // --- Validate Input ---
         if (layer_sizes.size() < 2)
@@ -63,7 +71,7 @@ public:
                 "NeuralNetwork Error: Input size (first element of layer_sizes) cannot be zero.");
         }
 
-        for (size_t i = 1; i < layer_sizes.size(); ++i)
+        for (size_t i = 1; i < layer_sizes.size(); i++)
         {
             if (layer_sizes[i] == 0)
             {
@@ -186,29 +194,74 @@ public:
      * @brief Gets the number of input features the network expects.
      * @return The input size.
      */
-    [[nodiscard]] std::size_t get_input_size() const noexcept { return input_size; }
+    [[nodiscard]] std::size_t get_input_size() const noexcept;
 
     /**
      * @brief Gets the number of output neurons in the network's final layer.
      * @return The output size.
      */
-    [[nodiscard]] std::size_t get_output_size() const noexcept { return output_size; }
+    [[nodiscard]] std::size_t get_output_size() const noexcept;
 
     /**
      * @brief Gets read-only access to the layers of the network.
      * @return A const reference to the vector of layers.
      */
-    [[nodiscard]] const std::vector<Layer>& get_layers() const noexcept { return layers; }
+    [[nodiscard]] const std::vector<Layer>& get_layers() const noexcept;
 
     /**
     * @brief Gets mutable access to the layers of the network.
     * @return A reference to the vector of layers.
     * @warning Modifying layers or their neurons directly can affect network state. Use with caution.
     */
-    [[nodiscard]] std::vector<Layer>& get_layers_mut() noexcept { return layers; } // Added if needed
+    [[nodiscard]] std::vector<Layer>& get_layers_mut() noexcept;
 
-    bool NeuralNetwork::load_weights(const std::string& filename);
-    void NeuralNetwork::save_weights(const std::string& filename) const;
+    /**
+     * @brief Gets the sizes of all layers in the network.
+     * @return A const reference to the vector containing the size of each layer.
+     */
+    [[nodiscard]] const std::vector<std::size_t>& get_layer_sizes() const noexcept;
+
+    /**
+     * @brief Loads the network's weights and biases from a binary file.
+     *
+     * This method reads the network's topology and the weights and biases of each neuron
+     * from a binary file. The topology in the file must exactly match the current
+     * network's architecture for the weights to be loaded correctly.
+     *
+     * @param filename The name of the file to load the weights from.
+     * @return True if the weights were loaded successfully, false otherwise (e.g., file not found,
+     * topology mismatch, or error during reading).
+     */
+    bool load_weights(const std::string& filename);
+
+    /**
+     * @brief Saves the network's weights and biases to a binary file.
+     *
+     * This method serializes the network's topology (input size, output size, number of layers,
+     * activation types, number of neurons per layer) and the weights and biases of each neuron
+     * into a binary file. This allows for the trained state of the network to be saved and
+     * loaded later.
+     *
+     * @param filename The name of the file to save the weights to.
+     * @throws std::runtime_error if the file cannot be opened for writing.
+     */
+    void save_weights(const std::string& filename) const;
+
+    /**
+     * @brief Generates a plausible neural network layer topology based on input/output sizes,
+     * training data amount, and desired complexity. Uses heuristics and rules of thumb.
+     * @param num_input_features Size of the input layer.
+     * @param num_output_neurons Size of the output layer.
+     * @param num_training_samples Number of samples available for training (influences capacity).
+     * @param complexity_level Hint for desired network complexity (SIMPLE, MEDIUM, COMPLEX).
+     * @return A std::vector<std::size_t> representing the layer sizes [input, hidden1, ..., hiddenN, output].
+     */
+    static std::vector<std::size_t> generate_layer_topology(
+        std::size_t       num_input_features,
+        std::size_t       num_output_neurons,
+        std::size_t       num_training_samples,
+        NetworkComplexity complexity_level
+    );
 };
 
 #endif // NEURALNETWORK_H

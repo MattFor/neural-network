@@ -111,9 +111,9 @@ void evaluate_network(
 );
 
 /**
- * @brief Splits input and target datasets into training and testing subsets.
+ * @brief Splits input and target data into training and testing subsets.
  *
- * Takes complete datasets of input features and corresponding target outputs,
+ * Takes complete data of input features and corresponding target outputs,
  * shuffles them optionally, and then divides them into two distinct sets
  * (training and testing) based on the specified ratio.
  *
@@ -153,7 +153,7 @@ SplitDataResult split_data(
 /**
  * @brief Displays a specified number of sample data points (input/target pairs).
  *
- * Prints the first 'count' samples from the provided input and target datasets
+ * Prints the first 'count' samples from the provided input and target data
  * to the standard output stream in a formatted way. Handles cases where the dataset
  * is smaller than 'count', or if the data is empty or mismatched. Useful for
  * debugging or inspecting generated/loaded data.

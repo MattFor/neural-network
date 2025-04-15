@@ -256,9 +256,22 @@ double Neuron::apply_derivative() const noexcept
     return this->weights;
 }
 
+/** @brief Gets the vector of input weights. Non-const for setting and loading weights. */
+[[nodiscard]] std::vector<double>& Neuron::get_weights_mut() noexcept
+{
+    return this->weights;
+}
+
 // --- Setters ---
 
+/** @brief For clipping the gradient. */
 void Neuron::set_gradient(const double new_gradient) noexcept
 {
     this->gradient = new_gradient;
+}
+
+/** @brief For setting the gradient mutably during binary file loading. */
+void Neuron::set_bias(const double new_bias) noexcept
+{
+    this->bias = new_bias;
 }
