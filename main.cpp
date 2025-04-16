@@ -302,7 +302,7 @@ int main()
                                 }
 
                                 std::cout << "Automatically determined complexity level: " << complexity_level_input <<
-                                        std::endl;
+                                        '\n';
                             }
 
                             switch (complexity_level_input)
@@ -378,7 +378,7 @@ int main()
                 {
                     std::cout << (i > 0 ? " -> " : "") << layer_sizes[i];
                 }
-                std::cout << std::endl;
+                std::cout << '\n';
 
                 // --- Activation Function Selection ---
                 std::cout << "\n--- Activation Function Selection ---" << '\n';
@@ -397,7 +397,7 @@ int main()
             }
             else
             {
-                std::cout << "\nReusing previously defined network architecture." << std::endl;
+                std::cout << "\nReusing previously defined network architecture." << '\n';
                 layer_sizes              = loaded_layer_sizes;
                 hidden_activation_choice = loaded_hidden_activation;
                 output_activation_choice = loaded_output_activation;
