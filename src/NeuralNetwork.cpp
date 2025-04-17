@@ -399,6 +399,7 @@ void NeuralNetwork::backpropagate(
             "NeuralNetwork::backpropagate: Target size mismatch. Expected {}, got {}.",
             this->output_size, target.size()));
     }
+
     if (network_input.size() != this->input_size)
     {
         throw std::runtime_error(std::format(
@@ -442,7 +443,6 @@ void NeuralNetwork::backpropagate(
 
 
 // Implementation for predict (single sample)
-// Note: Removed 'const'
 std::vector<double> NeuralNetwork::predict(const std::span<const double> input)
 {
     // Simply performs a forward pass
@@ -450,7 +450,6 @@ std::vector<double> NeuralNetwork::predict(const std::span<const double> input)
 }
 
 // Implementation for predict (batch)
-// Note: Removed 'const'
 std::vector<std::vector<double>> NeuralNetwork::predict(const std::vector<std::vector<double>>& inputs)
 {
     // Simply performs a forward pass for the batch

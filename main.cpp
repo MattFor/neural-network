@@ -26,6 +26,8 @@ int main()
     try // Top-level error handling
     {
         std::cout << "--- Neural Network by MattFor ---\n" << '\n';
+        std::cout << "\n===================== " << "Cycle #" << 0 << " =====================\n" <<
+                            '\n';
 
         // --- Dataset Processors Map ---
         const std::unordered_map<std::string, DataProcessingFunc> dataset_processors =
@@ -45,7 +47,8 @@ int main()
         bool                             dataset_loaded       = false;
         bool                             architecture_defined = false;
 
-        bool running = true;
+        bool running       = true;
+        int  current_cycle = 0;
 
         while (running)
         {
@@ -114,12 +117,12 @@ int main()
 
                     num_attributes = all_inputs[0].size();
                     num_targets    = all_targets[0].size();
-                    std::cout << "Dataset loaded: " << all_inputs.size() << " samples." << '\n';
+                    std::cout << "\nDataset loaded: " << all_inputs.size() << " samples." << '\n';
                     std::cout << "Input attributes per sample: " << num_attributes << '\n';
                     std::cout << "Target outputs per sample: " << num_targets << '\n';
 
                     execute_timed(
-                        "Splitting data...",
+                        "\nSplitting data...",
                         "Data split!",
                         [&]
                         {
@@ -133,7 +136,7 @@ int main()
                     );
 
                     std::cout << "Training samples: " << train_inputs.size() << '\n';
-                    std::cout << "Testing samples: " << test_inputs.size() << '\n';
+                    std::cout << "Testing samples: " << test_inputs.size() << "\n\n";
 
                     if constexpr (DEV_MODE)
                     {
@@ -231,7 +234,7 @@ int main()
 
                 // Generate the layer sizes
                 execute_timed(
-                    "Generating network topology...",
+                    "\nGenerating network topology...",
                     "Topology generated!",
                     [&]
                     {
@@ -388,7 +391,7 @@ int main()
                 loaded_hidden_activation = int_to_activation(hidden_choice);
                 hidden_activation_choice = loaded_hidden_activation;
 
-                std::cout << "Choose activation function for OUTPUT layer:" << '\n';
+                std::cout << "\nChoose activation function for OUTPUT layer:" << '\n';
                 std::cout << "  (Usually Sigmoid for binary/multi-label, Tanh for regression [-1,1])" << '\n';
                 std::cout << "  1: ReLU\n  2: LeakyReLU (alpha=" << LRELU_ALPHA << ")\n  3: Tanh\n  4: Sigmoid\n";
                 const int output_choice  = get_input<int>("Enter choice for output layer", 4);
@@ -616,8 +619,9 @@ int main()
                 running = false;
             }
 
-            std::cout << "\n========================================\n" << '\n'; // Separator for next cycle
-        }                                                                        // End while(running) loop
+            std::cout << "\n===================== " << "Cycle #" << ++current_cycle << " =====================\n" <<
+                    '\n'; // Separator for next cycle
+        }                 // End while(running) loop
     }
     catch (const std::filesystem::filesystem_error& e)
     {
@@ -640,7 +644,7 @@ int main()
     // --- Successful Execution Exit ---
     std::cout << "\nExecution finished successfully." << '\n';
     std::cout << "Press ENTER to exit..." << '\n';
-    // This is not useful here anymore.
+    // This is not useful here any more.
     // std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
     std::cin.get();
 

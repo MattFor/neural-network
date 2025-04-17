@@ -57,7 +57,7 @@ double Neuron::activate(const std::vector<double>& inputs)
     const double weighted_sum = std::transform_reduce(
         // std::execution::unseq allows vectorization/unsequenced execution on a single thread.
         // std::execution::par_unseq could be used for potential multi-threading if beneficial and safe.
-        std::execution::unseq,
+        std::execution::par_unseq,
         inputs.begin(),
         inputs.end(),
         this->weights.begin(),
@@ -91,7 +91,7 @@ void Neuron::compute_output_gradient(const double target)
     // Call the helper function apply_derivative() which selects the correct
     // derivative (Sigmoid, ReLU, LeakyReLU, Tanh) based on this->activation_type
     // and uses the appropriate value (this->output or this->last_net_input).
-    this->gradient = error * apply_derivative(); // <-- ADJUSTED LINE
+    this->gradient = error * apply_derivative();
 }
 
 

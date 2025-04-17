@@ -295,7 +295,7 @@ void Neuron::compute_hidden_gradient(std::size_t index_in_this_layer, const Laye
 
         // Add the contribution to the sum: w_jk * delta_k
         sum_weighted_gradients += weight_jk * gradient_k;
-        ++k; // Increment index for next neuron in the next layer
+        k++; // Increment index for next neuron in the next layer
     }
 
     // --- Calculate Final Gradient for This Hidden Neuron ---
