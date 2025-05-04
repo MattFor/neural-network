@@ -29,8 +29,8 @@ void display_train_data(
         return;
     }
 
-    // Determine approximate width needed for features display
-    std::size_t feature_width = num_attributes * 6;                       // Estimate width based on number format below
+    // Determine the approximate width needed for a feature display
+    std::size_t feature_width = num_attributes * 6; // Estimate width based on the number format below
     feature_width             = std::max(feature_width, std::size_t{15}); // Minimum width
 
     std::cout << "\n--- Sample Training Data ---\n";
@@ -40,7 +40,7 @@ void display_train_data(
             '\n';
     std::cout << std::string(feature_width + 28, '-') << '\n'; // Adjust separator width
 
-    // Print a few rows of training data (e.g., first 5 and last 5)
+    // Print a few rows of training data (e.g. first 5 and last 5)
     constexpr std::size_t display_count = 5;
     for (std::size_t i = 0; i < std::min(train_inputs.size(), display_count); i++)
     {
@@ -50,8 +50,8 @@ void display_train_data(
         for (std::size_t j = 0; j < train_inputs[i].size(); j++)
         {
             ss_features << std::fixed << std::setprecision(2) << train_inputs[i][j] << (j < train_inputs[i].size() - 1
-                ? " "
-                : "");
+                    ? " "
+                    : "");
         }
         std::cout << ss_features.str();
 
@@ -147,7 +147,7 @@ void generate_data_network(
     std::uniform_real_distribution input_dist(0.0, 1.0); // Inputs [0, 1]
 
     inputs.resize(num_samples, std::vector<double>(num_attributes));
-    targets.resize(num_samples, std::vector(num_targets, 0.0)); // Initialize targets with zeros
+    targets.resize(num_samples, std::vector(num_targets, 0.0)); // Initialise targets with zeros
 
     for (std::size_t i = 0; i < num_samples; i++)
     {
@@ -161,7 +161,7 @@ void generate_data_network(
         // Use iterators for safety and generality
 
         if (auto max_it = std::max_element(inputs[i].begin(), inputs[i].end()); max_it != inputs[i].end())
-        // Check if input vector was not empty
+        // Check if the input vector was not empty
         {
             // Ensure the index is valid for the target vector size
             if (const std::size_t target_class_index = std::distance(inputs[i].begin(), max_it);
@@ -174,7 +174,7 @@ void generate_data_network(
                 // This case should ideally not happen if num_targets >= num_attributes
                 // or if the task definition changes. Handle gracefully.
                 // std::cerr << "Warning: Max input index (" << target_class_index
-                //         << ") exceeds number of target classes (" << num_targets
+                //         << ") exceeds the number of target classes (" << num_targets
                 //         << ") for sample " << i << ". Setting target to class 0." << '\n';
                 if (!targets[i].empty())
                 {
@@ -182,7 +182,7 @@ void generate_data_network(
                 }
             }
         }
-        else if (!targets[i].empty()) // Handle case of empty input vector
+        else if (!targets[i].empty()) // Handle case of an empty input vector
         {
             std::cerr << "Warning: Empty input vector generated for sample " << i << ". Setting target to class 0." <<
                     '\n';
@@ -217,7 +217,7 @@ void evaluate_network(
     const std::size_t num_samples         = inputs.size();
 
     // Create a non-const copy IF predict modifies internal state in a way
-    // that interferes with subsequent predictions in the loop.
+    // that interferes with later predictions in the loop.
     // If predict is truly const w.r.t. weights/bias and only updates mutable caches,
     // the const reference is fine.
     // NeuralNetwork network_eval = network; // Example if copy needed
@@ -276,7 +276,7 @@ void evaluate_network(
         catch (const std::exception& e)
         {
             std::cerr << "Warning: Error computing loss for sample " << i << ": " << e.what() << '\n';
-            // Optionally skip sample or assign max loss
+            // Optionally skip the sample or assign max loss
         }
     } // End loop through samples
 
@@ -341,7 +341,7 @@ SplitDataResult split_data(
     std::vector<std::size_t> indices(total_samples);
     std::iota(indices.begin(), indices.end(), 0); // Efficiently fills the vector with sequential numbers.
 
-    // Shuffle the indices if requested. This randomizes the order of samples
+    // Shuffle the indices if requested. This randomises the order of samples
     // before splitting, ensuring unbiased train/test sets.
     if (shuffle)
     {
@@ -356,10 +356,10 @@ SplitDataResult split_data(
     // --- Calculate Split Point ---
 
     // Calculate the number of samples for the training set based on the ratio.
-    // Cast total_samples to double for the multiplication, then cast result back to size_t.
+    // Cast total_samples to double for the multiplication, then cast the result back to size_t.
     // Using std::round before casting can sometimes be slightly more robust against floating point inaccuracies,
-    // although static_cast is usually sufficient here.
-    // const auto train_count = static_cast<std::size_t>(std::round(static_cast<double>(total_samples) * train_ratio));
+    // although static_cast is usually enough here.
+    // Const auto train_count = static_cast<std::size_t>(std::round(static_cast<double>(total_samples) * train_ratio));
     const auto train_count = static_cast<std::size_t>(static_cast<double>(total_samples) * train_ratio);
 
     // Calculate the number of samples for the testing set.
@@ -370,7 +370,7 @@ SplitDataResult split_data(
     // This check might be redundant given the train_ratio validation, but adds safety.
     if (train_count == 0 || test_count == 0)
     {
-        throw std::runtime_error( // Use runtime_error for unexpected internal state
+        throw std::runtime_error( // Use runtime_error for an unexpected internal state
             "split_data Error: Calculated split results in an empty training or testing set. Train count: " +
             std::to_string(train_count) + ", Test count: " + std::to_string(test_count));
     }
@@ -441,7 +441,7 @@ void display_sample_data(
         return; // Nothing more to do.
     }
 
-    // Check if input data container is empty.
+    // Check if the input data container is empty.
     if (inputs.empty())
     {
         std::cout << "Input data is empty. Nothing to display." << '\n';
@@ -449,7 +449,7 @@ void display_sample_data(
         return;
     }
 
-    // Check if target data container is empty.
+    // Check if the target data container is empty.
     if (targets.empty())
     {
         std::cout << "Target data is empty. Nothing to display." << '\n';
@@ -472,7 +472,7 @@ void display_sample_data(
     }
 
     // --- Determine Actual Number of Samples to Display ---
-    // We can only display up to 'count' samples, or fewer if the dataset size is smaller.
+    // We can only display up to 'count' samples or fewer if the dataset size is smaller.
     const std::size_t num_samples_to_display = std::min(count, inputs.size());
 
     // Inform the user how many samples are actually being shown.
@@ -480,7 +480,7 @@ void display_sample_data(
             << " of " << inputs.size() << " total samples:" << '\n';
 
     // --- Set Output Formatting ---
-    // Use fixed-point notation with a specific precision for consistent alignment
+    // Use fixed-point notation with specific precision for consistent alignment
     // and readability of floating-point numbers.
     std::cout << std::fixed << std::setprecision(4); // Example: 4 decimal places
 
@@ -488,7 +488,7 @@ void display_sample_data(
     // Loop through the determined number of samples.
     for (std::size_t i = 0; i < num_samples_to_display; i++)
     {
-        // Print a header for each individual sample.
+        // Print a header for each sample.
         std::cout << "--- Sample " << i + 1 << " ---" << '\n';
 
         // --- Display Input Vector ---
@@ -543,8 +543,8 @@ void display_sample_data(
 
     // --- Reset Output Formatting (Good Practice) ---
     // Reset the iostream flags to their default state to avoid affecting
-    // subsequent output operations elsewhere in the program.
-    std::cout.unsetf(std::ios_base::floatfield); // Remove fixed/scientific flag
+    // later output operations elsewhere in the program.
+    std::cout.unsetf(std::ios_base::floatfield); // Remove the fixed / scientific flag
     std::cout << std::setprecision(6);           // Reset precision (default is often 6)
 
     // --- Print Footer ---

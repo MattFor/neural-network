@@ -27,7 +27,7 @@ int main()
     {
         std::cout << "--- Neural Network by MattFor ---\n" << '\n';
         std::cout << "\n===================== " << "Cycle #" << 0 << " =====================\n" <<
-                            '\n';
+                '\n';
 
         // --- Dataset Processors Map ---
         const std::unordered_map<std::string, DataProcessingFunc> dataset_processors =
@@ -553,10 +553,10 @@ int main()
                         std::stringstream ss;
                         ss << "network_weights";
 
-                        // Include dataset name in the filename
+                        // Include the dataset name in the filename
                         if (!current_dataset_name.empty())
                         {
-                            // Sanitize the dataset name to be filename-friendly
+                            // Sanitise the dataset name to be filename-friendly
                             std::string sanitized_dataset_name = current_dataset_name;
                             std::replace(sanitized_dataset_name.begin(), sanitized_dataset_name.end(), '.', '_');
                             std::replace(sanitized_dataset_name.begin(), sanitized_dataset_name.end(), ' ', '_');
@@ -564,7 +564,7 @@ int main()
                         }
                         else
                         {
-                            ss << "_unknown_dataset"; // Fallback if dataset name is not available
+                            ss << "_unknown_dataset"; // Fallback if the dataset name is not available
                         }
 
                         for (size_t size : network.get_layer_sizes())
@@ -588,7 +588,7 @@ int main()
                     }
                 }
             }
-            else if (weights_were_loaded && (action_choice != "C" && action_choice != "c"))
+            else if (weights_were_loaded && action_choice != "C" && action_choice != "c")
             {
                 std::cout << "\nSkipping training because weights were loaded." << '\n';
             }
@@ -645,7 +645,7 @@ int main()
     std::cout << "\nExecution finished successfully." << '\n';
     std::cout << "Press ENTER to exit..." << '\n';
     // This is not useful here any more.
-    // std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    // Std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
     std::cin.get();
 
     return EXIT_SUCCESS;

@@ -14,7 +14,7 @@
 #include <iostream>
 
 /**
- * @brief I know, multithreaded file loading, but trust me this will be faster than doing it sequentially
+ * @brief I know, multithreaded file loading, but trust me, this will be faster than doing it sequentially
  */
 inline std::pair<std::vector<std::vector<double>>, std::vector<std::vector<double>>> process_mnist()
 {
@@ -61,13 +61,13 @@ inline std::pair<std::vector<std::vector<double>>, std::vector<std::vector<doubl
                 {
                     input_instance.push_back(std::stod(features[i]) / 255.0); // Normalize pixel values
                 }
-                catch (const std::invalid_argument& e)
+                catch (const std::invalid_argument&)
                 {
                     std::cerr << "Warning: Invalid pixel value '" << features[i] << "' in file '" << filename <<
                             "' line: " << line << '\n';
                     input_instance.push_back(0.0);
                 }
-                catch (const std::out_of_range& e)
+                catch (const std::out_of_range&)
                 {
                     std::cerr << "Warning: Pixel value out of range '" << features[i] << "' in file '" << filename <<
                             "' line: " << line << '\n';
@@ -77,7 +77,7 @@ inline std::pair<std::vector<std::vector<double>>, std::vector<std::vector<doubl
 
             local_input_data.push_back(input_instance);
 
-            // Create one-hot encoded target vector
+            // Create a one-hot encoded target vector
             std::vector target_instance(10, 0.0);
             if (label >= 0 && label < 10)
             {

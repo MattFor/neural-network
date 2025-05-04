@@ -13,7 +13,7 @@ inline std::pair<std::vector<std::vector<double>>, std::vector<std::vector<doubl
         throw std::runtime_error("Could not open file car.data");
     }
 
-    std::string line;
+    std::string                      line;
     std::vector<std::vector<double>> input_data;
     std::vector<std::vector<double>> target_data;
 
@@ -21,60 +21,60 @@ inline std::pair<std::vector<std::vector<double>>, std::vector<std::vector<doubl
     std::map<std::string, std::vector<double>> buying_map =
     {
         {"vhigh", {1.0, 0.0, 0.0, 0.0}},
-        {"high",  {0.0, 1.0, 0.0, 0.0}},
-        {"med",   {0.0, 0.0, 1.0, 0.0}},
-        {"low",   {0.0, 0.0, 0.0, 1.0}}
+        {"high", {0.0, 1.0, 0.0, 0.0}},
+        {"med", {0.0, 0.0, 1.0, 0.0}},
+        {"low", {0.0, 0.0, 0.0, 1.0}}
     };
 
     std::map<std::string, std::vector<double>> maint_map =
     {
         {"vhigh", {1.0, 0.0, 0.0, 0.0}},
-        {"high",  {0.0, 1.0, 0.0, 0.0}},
-        {"med",   {0.0, 0.0, 1.0, 0.0}},
-        {"low",   {0.0, 0.0, 0.0, 1.0}}
+        {"high", {0.0, 1.0, 0.0, 0.0}},
+        {"med", {0.0, 0.0, 1.0, 0.0}},
+        {"low", {0.0, 0.0, 0.0, 1.0}}
     };
 
     std::map<std::string, std::vector<double>> doors_map =
     {
-        {"2",     {1.0, 0.0, 0.0, 0.0}},
-        {"3",     {0.0, 1.0, 0.0, 0.0}},
-        {"4",     {0.0, 0.0, 1.0, 0.0}},
+        {"2", {1.0, 0.0, 0.0, 0.0}},
+        {"3", {0.0, 1.0, 0.0, 0.0}},
+        {"4", {0.0, 0.0, 1.0, 0.0}},
         {"5more", {0.0, 0.0, 0.0, 1.0}}
     };
 
     std::map<std::string, std::vector<double>> persons_map =
     {
-        {"2",    {1.0, 0.0, 0.0}},
-        {"4",    {0.0, 1.0, 0.0}},
+        {"2", {1.0, 0.0, 0.0}},
+        {"4", {0.0, 1.0, 0.0}},
         {"more", {0.0, 0.0, 1.0}}
     };
 
     std::map<std::string, std::vector<double>> lug_boot_map =
     {
         {"small", {1.0, 0.0, 0.0}},
-        {"med",   {0.0, 1.0, 0.0}},
-        {"big",   {0.0, 0.0, 1.0}}
+        {"med", {0.0, 1.0, 0.0}},
+        {"big", {0.0, 0.0, 1.0}}
     };
 
     std::map<std::string, std::vector<double>> safety_map =
     {
-        {"low",  {1.0, 0.0, 0.0}},
-        {"med",  {0.0, 1.0, 0.0}},
+        {"low", {1.0, 0.0, 0.0}},
+        {"med", {0.0, 1.0, 0.0}},
         {"high", {0.0, 0.0, 1.0}}
     };
 
     std::map<std::string, std::vector<double>> class_map =
     {
         {"unacc", {1.0, 0.0, 0.0, 0.0}},
-        {"acc",   {0.0, 1.0, 0.0, 0.0}},
-        {"good",  {0.0, 0.0, 1.0, 0.0}},
+        {"acc", {0.0, 1.0, 0.0, 0.0}},
+        {"good", {0.0, 0.0, 1.0, 0.0}},
         {"vgood", {0.0, 0.0, 0.0, 1.0}}
     };
 
     while (std::getline(file, line))
     {
-        std::stringstream ss(line);
-        std::string segment;
+        std::stringstream        ss(line);
+        std::string              segment;
         std::vector<std::string> features;
 
         while (std::getline(ss, segment, ','))
