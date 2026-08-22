@@ -9,12 +9,20 @@
 #include <string>
 #include <vector>
 #include <thread>
+#include <utility>
 #include <fstream>
 #include <sstream>
 #include <iostream>
+#include <stdexcept>
+
+#include "Utilities.h"
 
 /**
- * @brief I know, multithreaded file loading, but trust me, this will be faster than doing it sequentially
+ * @brief Loads the MNIST training and test CSVs, one per thread.
+ *
+ * Both files are parsed concurrently as work is dominated by string-to-double conversion rather than by disk I/O.
+ *
+ * @return { inputs, targets }: pixels scaled to [0, 1] and one-hot labels of length 10.
  */
 inline std::pair<std::vector<std::vector<double>>, std::vector<std::vector<double>>> process_mnist()
 {
@@ -23,15 +31,12 @@ inline std::pair<std::vector<std::vector<double>>, std::vector<std::vector<doubl
     std::mutex                       data_mutex;
 
     // Function to process a single MNIST data file
-    auto processFile = [&](
-        const std::string&                filename, std::vector<std::vector<double>>& local_input_data,
-        std::vector<std::vector<double>>& local_target_data
-    )
+    auto processFile = [&](const std::string& filename, std::vector<std::vector<double>>& local_input_data, std::vector<std::vector<double>>& local_target_data)
     {
         std::ifstream file(filename);
         if (!file.is_open())
         {
-            throw std::runtime_error("Could not open file: " + filename);
+            throw std::runtime_error("Could not open MNIST file: " + filename + ". The CSVs are not bundled with this repository - see the README for where to download them.");
         }
 
         std::string line;
@@ -53,7 +58,17 @@ inline std::pair<std::vector<std::vector<double>>, std::vector<std::vector<doubl
                 continue; // Skip empty lines
             }
 
-            int                 label = std::stoi(features[0]);
+            int label = 0;
+            try
+            {
+                label = std::stoi(features[0]);
+            }
+            catch (const std::exception&)
+            {
+                std::cerr << "Warning: Unreadable label '" << features[0] << "' in file '" << filename << "'. Skipping row.\n";
+                continue;
+            }
+
             std::vector<double> input_instance;
             for (size_t i = 1; i < features.size(); i++)
             {
@@ -63,14 +78,12 @@ inline std::pair<std::vector<std::vector<double>>, std::vector<std::vector<doubl
                 }
                 catch (const std::invalid_argument&)
                 {
-                    std::cerr << "Warning: Invalid pixel value '" << features[i] << "' in file '" << filename <<
-                            "' line: " << line << '\n';
+                    std::cerr << "Warning: Invalid pixel value '" << features[i] << "' in file '" << filename << "' line: " << line << '\n';
                     input_instance.push_back(0.0);
                 }
                 catch (const std::out_of_range&)
                 {
-                    std::cerr << "Warning: Pixel value out of range '" << features[i] << "' in file '" << filename <<
-                            "' line: " << line << '\n';
+                    std::cerr << "Warning: Pixel value out of range '" << features[i] << "' in file '" << filename << "' line: " << line << '\n';
                     input_instance.push_back(0.0);
                 }
             }
@@ -85,8 +98,7 @@ inline std::pair<std::vector<std::vector<double>>, std::vector<std::vector<doubl
             }
             else
             {
-                std::cerr << "Warning: Invalid label '" << label << "' in file '" << filename << "' line: " << line <<
-                        '\n';
+                std::cerr << "Warning: Invalid label '" << label << "' in file '" << filename << "' line: " << line << '\n';
             }
 
             local_target_data.push_back(target_instance);
@@ -100,40 +112,46 @@ inline std::pair<std::vector<std::vector<double>>, std::vector<std::vector<doubl
     std::vector<std::vector<double>> test_input_data_local;
     std::vector<std::vector<double>> test_target_data_local;
 
-    std::thread train_thread([&]
-    {
-        try
-        {
-            processFile("../datasets/mnist/mnist_train.csv", train_input_data_local, train_target_data_local);
-            std::lock_guard lock(data_mutex);
-            input_data.insert(input_data.end(), train_input_data_local.begin(), train_input_data_local.end());
-            target_data.insert(target_data.end(), train_target_data_local.begin(), train_target_data_local.end());
-        }
-        catch (const std::runtime_error& error)
-        {
-            std::cerr << "Error processing MNIST training data in thread: " << error.what() << '\n';
-        }
-    });
+    std::exception_ptr train_error;
+    std::exception_ptr test_error;
 
-    std::thread test_thread([&]
+    auto load_split = [&](const char* relative_path, std::vector<std::vector<double>>& local_inputs, std::vector<std::vector<double>>& local_targets, std::exception_ptr& error_slot)
     {
         try
         {
-            processFile("../datasets/mnist/mnist_test.csv", test_input_data_local, test_target_data_local);
+            processFile(resolve_project_path(relative_path).string(), local_inputs, local_targets);
+
             std::lock_guard lock(data_mutex);
-            input_data.insert(input_data.end(), test_input_data_local.begin(), test_input_data_local.end());
-            target_data.insert(target_data.end(), test_target_data_local.begin(), test_target_data_local.end());
+            input_data.insert(input_data.end(), local_inputs.begin(), local_inputs.end());
+            target_data.insert(target_data.end(), local_targets.begin(), local_targets.end());
         }
-        catch (const std::runtime_error& error)
+        catch (...)
         {
-            std::cerr << "Error processing MNIST testing data in thread: " << error.what() << '\n';
+            error_slot = std::current_exception();
         }
-    });
+    };
+
+    std::thread train_thread(load_split, "datasets/mnist/mnist_train.csv", std::ref(train_input_data_local), std::ref(train_target_data_local), std::ref(train_error));
+
+    std::thread test_thread(load_split, "datasets/mnist/mnist_test.csv", std::ref(test_input_data_local), std::ref(test_target_data_local), std::ref(test_error));
 
     train_thread.join();
     test_thread.join();
 
-    return std::make_pair(input_data, target_data);
+    if (train_error)
+    {
+        std::rethrow_exception(train_error);
+    }
+
+    if (test_error)
+    {
+        std::rethrow_exception(test_error);
+    }
+
+    return {
+        std::move(input_data),
+        std::move(target_data)
+    };
 }
 
 #endif //MNIST_H

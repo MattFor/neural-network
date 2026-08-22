@@ -1,5 +1,17 @@
+build
+cmake-build-*
+out
+CMakeCache.txt
+CMakeFiles
+*.o
+*.obj
+*.a
+*.exe
+
 .idea
-cmake-build-debug
+.vs
+.vscode
+*.user
 
 datasets/mnist/mnist_test.csv
 datasets/mnist/mnist_train.csv

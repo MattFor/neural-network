@@ -1,10 +1,6 @@
 //
-// Created by MattFor on 12.04.2025.
+// Created by MattFor on 13.04.2025.
 //
-
-// Utilities.h
-// Helper functions for data handling, timing, and network evaluation.
-// Created by MattFor on 13/04/2025. (Date corrected)
 
 #ifndef UTILITIES_H
 #define UTILITIES_H
@@ -13,13 +9,14 @@
 #include <string>
 #include <chrono>
 #include <random>
-#include <cstdio>      // Required for std::printf, std::fflush
+#include <cstdio>
 #include <fstream>
 #include <sstream>
-#include <utility>     // Required for std::forward
+#include <utility>
 #include <iostream>
+#include <filesystem>
 #include <functional>
-#include <type_traits> // Required for std::is_void_v
+#include <type_traits>
 
 // Represents a pair of input vectors and corresponding target vectors.
 // Format: { vector_of_input_samples, vector_of_target_samples }
@@ -30,7 +27,7 @@ using DataPair = std::pair<std::vector<std::vector<double>>, std::vector<std::ve
 // which expands to: { {train_inputs, train_targets}, {test_inputs, test_targets} }
 using SplitDataResult = std::pair<DataPair, DataPair>;
 
-// We want to store the function related to the data file.
+// Store the function related to the data file.
 using DataProcessingFunc = std::function<DataPair()>;
 
 // Forward declare NeuralNetwork to avoid including its full header here if possible
@@ -40,11 +37,17 @@ class NeuralNetwork; // Forward declaration
 
 // --- Function Declarations ---
 
+[[nodiscard]] std::filesystem::path resolve_project_path(const std::filesystem::path& relative_path);
+
+[[nodiscard]] std::filesystem::path resolve_weights_directory();
+
 /**
  * @brief Gets user input with a prompt and default value.
+ *
  * @tparam T The type of input expected.
  * @param prompt The message displayed to the user.
  * @param default_value The value returned if input is empty or invalid.
+ *
  * @return The user's input or the default value.
  */
 template <typename T>
@@ -52,12 +55,14 @@ T get_input(const std::string& prompt, T default_value);
 
 /**
  * @brief Executes a function and prints the elapsed time.
+ *
  * @tparam Func Callable function type.
  * @tparam Args Argument types for the function.
  * @param startText Message printed before execution.
  * @param endText Message printed after execution.
  * @param func The function to execute.
  * @param args Arguments to pass to the function.
+ *
  * @return The result of the function if it's non-void.
  */
 template <typename Func, typename... Args>
@@ -65,20 +70,18 @@ auto execute_timed(const std::string& startText, const std::string& endText, Fun
 
 /**
  * @brief Displays multi-label training data (features and target vectors).
+ *
  * @param train_inputs Vector of input feature vectors.
  * @param train_targets Vector of target output vectors (e.g., one-hot).
  * @param num_attributes Expected number of features per input sample (for formatting).
  */
-void display_train_data(
-    const std::vector<std::vector<double>>& train_inputs,
-    const std::vector<std::vector<double>>& train_targets,
-    std::size_t                             num_attributes
-);
+void display_train_data(const std::vector<std::vector<double>>& train_inputs, const std::vector<std::vector<double>>& train_targets, std::size_t num_attributes);
 
 /**
  * @brief Generates synthetic data for network training (multi-label/classification).
  * Creates inputs and corresponding one-hot encoded targets where the '1'
  * indicates the index of the largest value in the input vector.
+ *
  * @param inputs Output vector to store generated input features.
  * @param targets Output vector to store generated target vectors (one-hot).
  * @param num_samples Number of samples to generate.
@@ -86,29 +89,21 @@ void display_train_data(
  * @param num_targets Number of possible target classes (size of the one-hot vector).
  * @param rng Mersenne Twister random number generator.
  */
-void generate_data_network(
-    std::vector<std::vector<double>>& inputs,
-    std::vector<std::vector<double>>& targets,
-    std::size_t                       num_samples,
-    std::size_t                       num_attributes,
-    std::size_t                       num_targets,
-    std::mt19937&                     rng
-);
+void generate_data_network(std::vector<std::vector<double>>& inputs, std::vector<std::vector<double>>& targets, std::size_t num_samples, std::size_t num_attributes, std::size_t num_targets, std::mt19937& rng);
 
 /**
  * @brief Evaluates the network's performance on a test dataset (classification accuracy).
  * Calculates accuracy based on comparing the index of the highest output activation
  * with the index of the '1' in the one-hot encoded target vector.
- * @param network The trained neural network (const reference).
+ *
+ * @param network The trained neural network. Non-const because predicting updates the
+ * per-layer activation caches.
  * @param inputs The input feature vectors of the test set.
  * @param targets The corresponding one-hot encoded target vectors of the test set.
+ *
  * @throws std::runtime_error If input/target counts or sizes mismatch.
  */
-void evaluate_network(
-    NeuralNetwork&                          network, // Now const
-    const std::vector<std::vector<double>>& inputs,
-    const std::vector<std::vector<double>>& targets
-);
+void evaluate_network(NeuralNetwork& network, const std::vector<std::vector<double>>& inputs, const std::vector<std::vector<double>>& targets);
 
 /**
  * @brief Splits input and target data into training and testing subsets.
@@ -143,12 +138,7 @@ void evaluate_network(
  * - all_inputs (and therefore all_targets) is empty.
  * - train_ratio is not strictly between 0.0 and 1.0.
  */
-SplitDataResult split_data(
-    const std::vector<std::vector<double>>& all_inputs,
-    const std::vector<std::vector<double>>& all_targets,
-    double                                  train_ratio,
-    bool                                    shuffle = true
-);
+SplitDataResult split_data(const std::vector<std::vector<double>>& all_inputs, const std::vector<std::vector<double>>& all_targets, double train_ratio, bool shuffle = true);
 
 /**
  * @brief Displays a specified number of sample data points (input/target pairs).
@@ -168,12 +158,7 @@ SplitDataResult split_data(
  * fewer samples than 'count', all available samples will be displayed.
  * If count is 0, nothing is displayed.
  */
-void display_sample_data(
-    const std::string&                      title,
-    const std::vector<std::vector<double>>& inputs,
-    const std::vector<std::vector<double>>& targets,
-    std::size_t                             count
-);
+void display_sample_data(const std::string& title, const std::vector<std::vector<double>>& inputs, const std::vector<std::vector<double>>& targets, std::size_t count);
 
 // --- Template Implementations (must be in header) ---
 
@@ -182,17 +167,18 @@ T get_input(const std::string& prompt, T default_value)
 {
     std::cout << prompt << " (default: " << default_value << "): ";
     std::string input_line;
-    std::getline(std::cin, input_line);
 
-    if (input_line.empty())
+    // A failed getline means end-of-input.
+    if (!std::getline(std::cin, input_line) || input_line.empty())
     {
+        std::cout << '\n';
         return default_value;
     }
 
     std::istringstream stream(input_line);
     T                  value;
 
-    // Check if extraction is successful and if the entire stream was consumed (optional, for stricter input)
+    // Require the whole line to be consumed so "12abc" is rejected rather than read as 12.
     if (stream >> value && stream.eof())
     {
         return value;
@@ -200,6 +186,21 @@ T get_input(const std::string& prompt, T default_value)
 
     std::cout << "Invalid input. Using default value." << '\n';
     return default_value;
+}
+
+template <>
+inline std::string get_input<std::string>(const std::string& prompt, std::string default_value)
+{
+    std::cout << prompt << " (default: " << default_value << "): ";
+    std::string input_line;
+
+    if (!std::getline(std::cin, input_line) || input_line.empty())
+    {
+        std::cout << '\n';
+        return default_value;
+    }
+
+    return input_line;
 }
 
 

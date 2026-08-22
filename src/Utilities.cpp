@@ -1,20 +1,82 @@
 //
-// Created by MattFor on 12.04.2025.
+// Created by MattFor on 13.04.2025.
 //
 
-// Utilities.cpp
-// Implementation file for utility functions.
-// Created by MattFor on 13/04/2025. (Date corrected)
+#include "Utilities.h"
+#include "NeuralNetwork.h"
 
-#include "../include/Utilities.h" // Include own header first
-#include "../include/NeuralNetwork.h" // Need full definition for evaluate_network
+#include <ranges>
+#include <numeric>
+#include <algorithm>
+
+namespace
+{
+    /// How far up the directory tree resolve_project_path() is willing to search.
+    /// Deep enough for nested build trees such as `build/x64/Debug/`, shallow enough
+    /// that a missing file does not turn into a walk to the filesystem root.
+    constexpr int MAX_PARENT_SEARCH_DEPTH = 6;
+}
+
+std::filesystem::path resolve_project_path(const std::filesystem::path& relative_path)
+{
+    std::error_code       ec; // Keep the filesystem calls non-throwing; a failed probe just misses.
+    std::filesystem::path directory = std::filesystem::current_path(ec);
+
+    if (ec)
+    {
+        return relative_path;
+    }
+
+    for (int depth = 0; depth <= MAX_PARENT_SEARCH_DEPTH; depth++)
+    {
+        if (std::filesystem::path candidate = directory / relative_path; exists(candidate, ec))
+        {
+            return candidate;
+        }
+
+        const std::filesystem::path parent = directory.parent_path();
+        if (parent.empty() || parent == directory) // Reached the filesystem root.
+        {
+            break;
+        }
+
+        directory = parent;
+    }
+
+    return relative_path;
+}
+
+std::filesystem::path resolve_weights_directory()
+{
+    std::error_code ec;
+
+    if (std::filesystem::path existing = resolve_project_path("nn_data"); is_directory(existing, ec))
+    {
+        return existing;
+    }
+
+    std::filesystem::path parent = resolve_project_path("datasets").parent_path();
+    if (parent.empty())
+    {
+        parent = std::filesystem::current_path(ec);
+        if (ec)
+        {
+            parent = ".";
+        }
+    }
+
+    std::filesystem::path target = parent / "nn_data";
+    create_directories(target, ec);
+
+    return ec
+               ? std::filesystem::path{
+                   "nn_data"
+               }
+               : target;
+}
 
 // Display multi-label training data
-void display_train_data(
-    const std::vector<std::vector<double>>& train_inputs,
-    const std::vector<std::vector<double>>& train_targets,
-    const std::size_t                       num_attributes
-)
+void display_train_data(const std::vector<std::vector<double>>& train_inputs, const std::vector<std::vector<double>>& train_targets, const std::size_t num_attributes)
 {
     if (train_inputs.empty() || train_targets.empty())
     {
@@ -24,20 +86,19 @@ void display_train_data(
 
     if (train_inputs.size() != train_targets.size())
     {
-        std::cerr << "Warning: Mismatch between number of input samples and target samples in display_train_data." <<
-                '\n';
+        std::cerr << "Warning: Mismatch between number of input samples and target samples in display_train_data." << '\n';
         return;
     }
 
     // Determine the approximate width needed for a feature display
     std::size_t feature_width = num_attributes * 6; // Estimate width based on the number format below
-    feature_width             = std::max(feature_width, std::size_t{15}); // Minimum width
+    feature_width             = std::max(feature_width, std::size_t{
+                                             15
+                                         }); // Minimum width
 
     std::cout << "\n--- Sample Training Data ---\n";
     // Print headers
-    std::cout << std::left << std::setw(static_cast<int>(feature_width)) << "Input Features" << " | " <<
-            "Target Vector (One-Hot)" <<
-            '\n';
+    std::cout << std::left << std::setw(static_cast<int>(feature_width)) << "Input Features" << " | " << "Target Vector (One-Hot)" << '\n';
     std::cout << std::string(feature_width + 28, '-') << '\n'; // Adjust separator width
 
     // Print a few rows of training data (e.g. first 5 and last 5)
@@ -49,9 +110,7 @@ void display_train_data(
         std::stringstream ss_features;
         for (std::size_t j = 0; j < train_inputs[i].size(); j++)
         {
-            ss_features << std::fixed << std::setprecision(2) << train_inputs[i][j] << (j < train_inputs[i].size() - 1
-                    ? " "
-                    : "");
+            ss_features << std::fixed << std::setprecision(2) << train_inputs[i][j] << ( j < train_inputs[i].size() - 1 ? " " : "" );
         }
         std::cout << ss_features.str();
 
@@ -80,8 +139,7 @@ void display_train_data(
 
             for (std::size_t j = 0; j < train_inputs[i].size(); j++)
             {
-                ss_features << std::fixed << std::setprecision(2) << train_inputs[i][j] << (
-                    j < train_inputs[i].size() - 1 ? " " : "");
+                ss_features << std::fixed << std::setprecision(2) << train_inputs[i][j] << ( j < train_inputs[i].size() - 1 ? " " : "" );
             }
 
             std::cout << ss_features.str();
@@ -109,8 +167,7 @@ void display_train_data(
 
             for (std::size_t j = 0; j < train_inputs[i].size(); j++)
             {
-                ss_features << std::fixed << std::setprecision(2) << train_inputs[i][j] << (
-                    j < train_inputs[i].size() - 1 ? " " : "");
+                ss_features << std::fixed << std::setprecision(2) << train_inputs[i][j] << ( j < train_inputs[i].size() - 1 ? " " : "" );
             }
 
             std::cout << ss_features.str();
@@ -135,14 +192,7 @@ void display_train_data(
 
 
 // Generate synthetic data for network (finding max input index)
-void generate_data_network(
-    std::vector<std::vector<double>>& inputs,
-    std::vector<std::vector<double>>& targets,
-    const std::size_t                 num_samples,
-    const std::size_t                 num_attributes,
-    const std::size_t                 num_targets,
-    std::mt19937&                     rng
-)
+void generate_data_network(std::vector<std::vector<double>>& inputs, std::vector<std::vector<double>>& targets, const std::size_t num_samples, const std::size_t num_attributes, const std::size_t num_targets, std::mt19937& rng)
 {
     std::uniform_real_distribution input_dist(0.0, 1.0); // Inputs [0, 1]
 
@@ -160,12 +210,11 @@ void generate_data_network(
         // Find the index of the largest input value
         // Use iterators for safety and generality
 
-        if (auto max_it = std::max_element(inputs[i].begin(), inputs[i].end()); max_it != inputs[i].end())
+        if (auto max_it = std::ranges::max_element(inputs[i]); max_it != inputs[i].end())
         // Check if the input vector was not empty
         {
             // Ensure the index is valid for the target vector size
-            if (const std::size_t target_class_index = std::distance(inputs[i].begin(), max_it);
-                target_class_index < num_targets)
+            if (const std::size_t target_class_index = std::distance(inputs[i].begin(), max_it); target_class_index < num_targets)
             {
                 targets[i][target_class_index] = 1.0; // Set the one-hot target
             }
@@ -184,8 +233,7 @@ void generate_data_network(
         }
         else if (!targets[i].empty()) // Handle case of an empty input vector
         {
-            std::cerr << "Warning: Empty input vector generated for sample " << i << ". Setting target to class 0." <<
-                    '\n';
+            std::cerr << "Warning: Empty input vector generated for sample " << i << ". Setting target to class 0." << '\n';
             targets[i][0] = 1.0; // Default target
         }
     }
@@ -195,11 +243,7 @@ void generate_data_network(
 
 
 // Evaluate the network using classification accuracy for one-hot encoded targets
-void evaluate_network(
-    NeuralNetwork&                          network, // Now const
-    const std::vector<std::vector<double>>& inputs,
-    const std::vector<std::vector<double>>& targets
-)
+void evaluate_network(NeuralNetwork& network, const std::vector<std::vector<double>>& inputs, const std::vector<std::vector<double>>& targets)
 {
     if (inputs.empty())
     {
@@ -216,16 +260,10 @@ void evaluate_network(
     double            total_loss          = 0.0;
     const std::size_t num_samples         = inputs.size();
 
-    // Create a non-const copy IF predict modifies internal state in a way
-    // that interferes with later predictions in the loop.
-    // If predict is truly const w.r.t. weights/bias and only updates mutable caches,
-    // the const reference is fine.
-    // NeuralNetwork network_eval = network; // Example if copy needed
-
     for (std::size_t i = 0; i < num_samples; i++)
     {
         // Use std::span for prediction
-        const std::span input_span(inputs[i]);
+        const std::span     input_span(inputs[i]);
         // Call the const predict method
         std::vector<double> output_vec = network.predict(input_span);
 
@@ -233,9 +271,7 @@ void evaluate_network(
 
         if (output_vec.size() != target_vec.size())
         {
-            throw std::runtime_error(std::format(
-                "Evaluation Error: Output size ({}) mismatch with target size ({}) at index {}.",
-                output_vec.size(), target_vec.size(), i));
+            throw std::runtime_error(std::format("Evaluation Error: Output size ({}) mismatch with target size ({}) at index {}.", output_vec.size(), target_vec.size(), i));
         }
 
         if (target_vec.empty())
@@ -246,26 +282,20 @@ void evaluate_network(
 
         // --- Accuracy Calculation (for Classification) ---
         // Find predicted class: index of the maximum output value
-        const auto        predicted_it    = std::max_element(output_vec.begin(), output_vec.end());
-        const std::size_t predicted_class = std::distance(output_vec.begin(), predicted_it);
+        const auto predicted_it = std::ranges::max_element(output_vec);
 
-        // Find actual class: index of the '1.0' in the one-hot target vector
-        if (auto actual_it = std::ranges::find(target_vec, 1.0); actual_it != target_vec.end())
+        // Find the actual class the same way, rather than searching for an exact 1.0. That
+        // makes the check independent of the exact encoding (hard one-hot, smoothed labels,
+        // or values that a lossy round trip nudged off 1.0).
+
+        if (const auto actual_it = std::ranges::max_element(target_vec); *actual_it <= 0.0)
         {
-            // Ensure 1.0 was found
-
-            // Compare predicted class index with actual class index
-            if (const std::size_t actual_class = std::distance(target_vec.begin(), actual_it);
-                predicted_class == actual_class)
-            {
-                correct_predictions++;
-            }
+            // Every entry is zero/negative: there is no class to be right about.
+            std::cerr << "Warning: Target vector for sample " << i << " has no positive entry. Check data generation/loading." << '\n';
         }
-        else
+        else if (std::distance(output_vec.begin(), predicted_it) == std::distance(target_vec.begin(), actual_it))
         {
-            // This indicates the target vector wasn't properly one-hot encoded.
-            std::cerr << "Warning: No '1.0' found in target vector during evaluation for sample " << i
-                    << ". Check data generation/loading." << '\n';
+            correct_predictions++;
         }
 
         // --- Loss Calculation ---
@@ -282,9 +312,7 @@ void evaluate_network(
 
     // Calculate overall average loss and accuracy
     const double avg_loss = num_samples == 0 ? 0.0 : total_loss / static_cast<double>(num_samples);
-    const double accuracy = num_samples == 0
-                                ? 0.0
-                                : static_cast<double>(correct_predictions) / static_cast<double>(num_samples);
+    const double accuracy = num_samples == 0 ? 0.0 : static_cast<double>(correct_predictions) / static_cast<double>(num_samples);
 
     // Print the evaluation results
     std::printf("--- Evaluation Results ---\n");
@@ -298,11 +326,10 @@ void evaluate_network(
  * @brief Implementation of the data splitting function.
  * (See Utilities.h for detailed parameter and return value documentation)
  */
-SplitDataResult split_data(
-    const std::vector<std::vector<double>>& all_inputs,  // Input features dataset
-    const std::vector<std::vector<double>>& all_targets, // Corresponding target outputs dataset
-    const double                            train_ratio, // Proportion for training set (0.0 to 1.0)
-    const bool                              shuffle      // Whether to shuffle before splitting
+SplitDataResult split_data(const std::vector<std::vector<double>>& all_inputs,  // Input features dataset
+                           const std::vector<std::vector<double>>& all_targets, // Corresponding target outputs dataset
+                           const double                            train_ratio, // Proportion for training set (0.0 to 1.0)
+                           const bool                              shuffle      // Whether to shuffle before splitting
 )
 {
     // --- Input Validation ---
@@ -310,10 +337,7 @@ SplitDataResult split_data(
     // Check if input and target vectors have the same number of samples.
     if (all_inputs.size() != all_targets.size())
     {
-        throw std::invalid_argument(
-            "split_data Error: Input features count (" + std::to_string(all_inputs.size()) +
-            ") does not match target outputs count (" + std::to_string(all_targets.size()) + ")."
-        );
+        throw std::invalid_argument("split_data Error: Input features count (" + std::to_string(all_inputs.size()) + ") does not match target outputs count (" + std::to_string(all_targets.size()) + ").");
     }
 
     // Check if the data are empty.
@@ -326,10 +350,7 @@ SplitDataResult split_data(
     // A ratio of 0 or 1 would result in one empty set, which might be undesirable.
     if (train_ratio <= 0.0 || train_ratio >= 1.0)
     {
-        throw std::invalid_argument(
-            "split_data Error: Training ratio must be between 0.0 and 1.0 (exclusive). Received: " +
-            std::to_string(train_ratio)
-        );
+        throw std::invalid_argument("split_data Error: Training ratio must be between 0.0 and 1.0 (exclusive). Received: " + std::to_string(train_ratio));
     }
 
     // --- Index Preparation and Shuffling ---
@@ -348,9 +369,9 @@ SplitDataResult split_data(
         // Use a random device to seed the Mersenne Twister engine for better randomness.
         std::random_device rd;
         // Mersenne Twister 19937 generator: a high-quality pseudo-random number generator.
-        std::mt19937 random_engine(rd());
+        std::mt19937       random_engine(rd());
         // Perform the in-place shuffle on the indices vector using the random engine.
-        std::shuffle(indices.begin(), indices.end(), random_engine);
+        std::ranges::shuffle(indices, random_engine);
     }
 
     // --- Calculate Split Point ---
@@ -371,8 +392,7 @@ SplitDataResult split_data(
     if (train_count == 0 || test_count == 0)
     {
         throw std::runtime_error( // Use runtime_error for an unexpected internal state
-            "split_data Error: Calculated split results in an empty training or testing set. Train count: " +
-            std::to_string(train_count) + ", Test count: " + std::to_string(test_count));
+            "split_data Error: Calculated split results in an empty training or testing set. Train count: " + std::to_string(train_count) + ", Test count: " + std::to_string(test_count));
     }
 
     // --- Data Allocation and Copying ---
@@ -414,18 +434,20 @@ SplitDataResult split_data(
 
     // Return the final result as a pair containing the training DataPair and the testing DataPair.
     // This structure { {train_in, train_out}, {test_in, test_out} } matches the SplitDataResult type.
-    return {train_data, test_data};
+    return {
+        train_data,
+        test_data
+    };
 }
 
 /**
  * @brief Implementation of the function to display sample data points.
  * (See Utilities.h for detailed parameter and purpose documentation)
  */
-void display_sample_data(
-    const std::string&                      title,   // Title for the output block
-    const std::vector<std::vector<double>>& inputs,  // Input dataset
-    const std::vector<std::vector<double>>& targets, // Target dataset
-    const std::size_t                       count)   // Max number of samples to show
+void display_sample_data(const std::string&                      title,   // Title for the output block
+                         const std::vector<std::vector<double>>& inputs,  // Input dataset
+                         const std::vector<std::vector<double>>& targets, // Target dataset
+                         const std::size_t                       count)   // Max number of samples to show
 {
     // --- Print Title ---
     // Provides context for the printed data block.
@@ -462,9 +484,7 @@ void display_sample_data(
     if (inputs.size() != targets.size())
     {
         // Output a warning if sizes mismatch, as pairs cannot be reliably formed.
-        std::cout << "[Warning] display_sample_data: Input size (" << inputs.size()
-                << ") and Target size (" << targets.size()
-                << ") mismatch. Cannot display pairs reliably." << '\n';
+        std::cout << "[Warning] display_sample_data: Input size (" << inputs.size() << ") and Target size (" << targets.size() << ") mismatch. Cannot display pairs reliably." << '\n';
         std::cout << "--- End of Sample Data ---" << '\n';
         // It's safer to return here than to potentially access out-of-bounds data
         // or display misleading pairs.
@@ -472,12 +492,11 @@ void display_sample_data(
     }
 
     // --- Determine Actual Number of Samples to Display ---
-    // We can only display up to 'count' samples or fewer if the dataset size is smaller.
+    // Display up to 'count' samples or fewer if the dataset size is smaller.
     const std::size_t num_samples_to_display = std::min(count, inputs.size());
 
     // Inform the user how many samples are actually being shown.
-    std::cout << "Displaying first " << num_samples_to_display
-            << " of " << inputs.size() << " total samples:" << '\n';
+    std::cout << "Displaying first " << num_samples_to_display << " of " << inputs.size() << " total samples:" << '\n';
 
     // --- Set Output Formatting ---
     // Use fixed-point notation with specific precision for consistent alignment
