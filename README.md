@@ -1,4 +1,4 @@
-# neural-network
+# Neural Network
 
 [![Release](https://img.shields.io/github/v/release/MattFor/neural-network)](https://github.com/MattFor/neural-network/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
